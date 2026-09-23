@@ -85,17 +85,22 @@
         <div class="eyebrow">Voting has closed</div>
         <h2>And the winner is…</h2>
         <div id="podium" class="podium"></div>
-        <a id="downloadAllBtn" class="btn btn-primary btn-block" href="/api/download">Download all photos</a>
+        <button id="downloadAllBtn" class="btn btn-primary btn-block" type="button">Save all photos</button>
       </div>
       <div class="card stack">
         <h3 style="font-size:16px;">Full album</h3>
-        <p class="lede">Tap photos to select them, then download just those — or grab everything above.</p>
+        <p class="lede">Tap photos to select them, then save just those — or grab everything above. On most phones this opens your share sheet, where "Save Image(s)" adds them straight to your Photos.</p>
         <div id="resultsGrid" class="photo-grid voting"></div>
-        <button id="downloadSelectedBtn" class="btn btn-ghost btn-block hidden" type="button">Download selected (<span id="selectedCount">0</span>)</button>
+        <button id="downloadSelectedBtn" class="btn btn-ghost btn-block hidden" type="button">Save selected (<span id="selectedCount">0</span>)</button>
       </div>
     </section>
 
     <p class="footer-note">Built for one event, one album, one winner.</p>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden">
+    <button id="lightboxClose" class="lightbox-close" type="button" aria-label="Close">✕</button>
+    <img id="lightboxImg" src="" alt="Enlarged photo" />
   </div>
 
   <script src="/app.js"></script>

@@ -244,6 +244,8 @@
           </button>
         </div>`;
       grid.appendChild(card);
+
+      card.querySelector('.ph-img').addEventListener('click', () => openLightbox(p.url));
     });
 
     grid.querySelectorAll('.like-btn').forEach((btn) => {
@@ -270,6 +272,7 @@
   // ---------- Results screen ----------
 
   let selectedIds = new Set();
+  let resultsPhotos = [];
 
   function updateDownloadSelectedButton() {
     const btn = el('downloadSelectedBtn');
@@ -277,9 +280,68 @@
     btn.classList.toggle('hidden', selectedIds.size === 0);
   }
 
+  // Above this many photos we skip straight to the zip fallback -- fetching
+  // and holding that many full-size images as blobs in memory to hand to
+  // the share sheet gets slow and unreliable, and some OS share sheets cap
+  // how many files they'll accept at once anyway.
+  const SHARE_PHOTO_LIMIT = 30;
+
+  function extensionFromUrl(url) {
+    const clean = url.split('?')[0];
+    const dot = clean.lastIndexOf('.');
+    return dot === -1 ? 'jpg' : clean.slice(dot + 1);
+  }
+
+  function zipUrlFor(ids) {
+    return ids ? `/api/download?ids=${encodeURIComponent(ids.join(','))}` : '/api/download';
+  }
+
+  // Tries the native share sheet (which offers "Save Image(s)" straight to
+  // the phone's gallery on most modern iOS/Android browsers). Falls back to
+  // the zip download wherever that isn't available or doesn't work.
+  async function saveOrDownload(button, ids) {
+    const photos = ids ? resultsPhotos.filter((p) => ids.includes(p.id)) : resultsPhotos;
+    if (photos.length === 0) return;
+
+    const canTryShare =
+      photos.length <= SHARE_PHOTO_LIMIT &&
+      typeof navigator.share === 'function' &&
+      typeof navigator.canShare === 'function';
+
+    if (canTryShare) {
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Preparing…';
+      try {
+        const files = await Promise.all(
+          photos.map(async (p, i) => {
+            const fileRes = await fetch(p.url);
+            const blob = await fileRes.blob();
+            return new File([blob], `photo-${i + 1}.${extensionFromUrl(p.url)}`, {
+              type: blob.type || 'image/jpeg',
+            });
+          })
+        );
+        if (navigator.canShare({ files })) {
+          await navigator.share({ files, title: 'Event photos' });
+          return; // shared (or the user cancelled the share sheet) -- either way, done
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // user backed out of the share sheet on purpose
+        // Otherwise fall through to the zip download below.
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
+
+    window.location.href = zipUrlFor(ids);
+  }
+
   async function renderResults() {
     const res = await fetch('/api/results');
     const data = await res.json();
+    resultsPhotos = data.all;
 
     const podium = el('podium');
     podium.innerHTML = '';
@@ -330,6 +392,26 @@
     updateDownloadSelectedButton();
   }
 
+  // ---------- Lightbox ----------
+
+  function openLightbox(url) {
+    el('lightboxImg').src = url;
+    el('lightbox').classList.remove('hidden');
+  }
+
+  function closeLightbox() {
+    el('lightbox').classList.add('hidden');
+    el('lightboxImg').src = '';
+  }
+
+  el('lightboxClose').addEventListener('click', closeLightbox);
+  el('lightbox').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeLightbox(); // ignore clicks on the image itself
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeLightbox();
+  });
+
   // ---------- Init ----------
 
   el('switchUserBtn').addEventListener('click', () => {
@@ -340,10 +422,13 @@
     render();
   });
 
-  el('downloadSelectedBtn').addEventListener('click', () => {
+  el('downloadAllBtn').addEventListener('click', (e) => {
+    saveOrDownload(e.currentTarget, null);
+  });
+
+  el('downloadSelectedBtn').addEventListener('click', (e) => {
     if (selectedIds.size === 0) return;
-    const ids = [...selectedIds].join(',');
-    window.location.href = '/api/download?ids=' + encodeURIComponent(ids);
+    saveOrDownload(e.currentTarget, [...selectedIds]);
   });
 
   wireUpload();
