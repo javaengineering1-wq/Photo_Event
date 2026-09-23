@@ -85,10 +85,13 @@
         <div class="eyebrow">Voting has closed</div>
         <h2>And the winner is…</h2>
         <div id="podium" class="podium"></div>
+        <a id="downloadAllBtn" class="btn btn-primary btn-block" href="/api/download">Download all photos</a>
       </div>
       <div class="card stack">
-        <h3 style="font-size:16px;">Full results</h3>
-        <div id="resultsList" class="stack"></div>
+        <h3 style="font-size:16px;">Full album</h3>
+        <p class="lede">Tap photos to select them, then download just those — or grab everything above.</p>
+        <div id="resultsGrid" class="photo-grid voting"></div>
+        <button id="downloadSelectedBtn" class="btn btn-ghost btn-block hidden" type="button">Download selected (<span id="selectedCount">0</span>)</button>
       </div>
     </section>
 

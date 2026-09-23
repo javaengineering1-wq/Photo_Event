@@ -269,6 +269,57 @@ a { color: var(--gold); }
 .photo-card .ph-user { font-size: 12.5px; color: var(--text-muted); }
 .photo-card .ph-meta-end { justify-content: flex-end; }
 
+/* ---------- Selectable result thumbnails ---------- */
+
+.result-card {
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.result-card.selected { border-color: var(--gold); }
+
+.result-card .thumb-wrap { position: relative; aspect-ratio: 1 / 1; }
+.result-card .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.result-card .select-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: rgba(18, 19, 42, 0.72);
+  border: 1px solid rgba(244, 242, 234, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.result-card.selected .select-check {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.result-card .select-check .checkmark {
+  color: #1a1400;
+  font-size: 14px;
+  font-weight: 700;
+  visibility: hidden;
+}
+.result-card.selected .select-check .checkmark { visibility: visible; }
+
+.result-card .caption {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.result-card .caption .count { color: var(--gold); font-weight: 700; }
+
 .like-btn {
   display: inline-flex;
   align-items: center;

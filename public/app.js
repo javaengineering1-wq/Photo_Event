@@ -241,7 +241,6 @@
         <div class="ph-meta ph-meta-end">
           <button class="like-btn ${p.likedByMe ? 'liked' : ''}" data-id="${p.id}">
             <span class="heart">${p.likedByMe ? '♥' : '♡'}</span>
-            <span class="count">${p.likeCount}</span>
           </button>
         </div>`;
       grid.appendChild(card);
@@ -270,6 +269,14 @@
 
   // ---------- Results screen ----------
 
+  let selectedIds = new Set();
+
+  function updateDownloadSelectedButton() {
+    const btn = el('downloadSelectedBtn');
+    el('selectedCount').textContent = selectedIds.size;
+    btn.classList.toggle('hidden', selectedIds.size === 0);
+  }
+
   async function renderResults() {
     const res = await fetch('/api/results');
     const data = await res.json();
@@ -291,19 +298,36 @@
     if (data.top.length === 0) {
       podium.innerHTML = '<p class="empty" style="grid-column: 1 / -1;">No photos were uploaded during the event.</p>';
     }
+    el('downloadAllBtn').classList.toggle('hidden', data.all.length === 0);
 
-    const list = el('resultsList');
-    list.innerHTML = '';
+    // Drop any selected ids for photos that no longer exist (e.g. admin moderation).
+    const stillThere = new Set(data.all.map((p) => p.id));
+    selectedIds = new Set([...selectedIds].filter((id) => stillThere.has(id)));
+
+    const grid = el('resultsGrid');
+    grid.innerHTML = '';
     data.all.forEach((p, i) => {
-      const row = document.createElement('div');
-      row.className = 'photo-card';
-      row.innerHTML = `
-        <div class="ph-meta" style="padding: 12px;">
-          <span class="ph-user">#${i + 1} · ${p.username}</span>
-          <span class="count" style="color: var(--gold); font-weight:700;">${p.likeCount} like${p.likeCount === 1 ? '' : 's'}</span>
+      const card = document.createElement('div');
+      card.className = 'result-card' + (selectedIds.has(p.id) ? ' selected' : '');
+      card.innerHTML = `
+        <div class="thumb-wrap">
+          <img src="${p.url}" alt="Photo by ${p.username}" loading="lazy" />
+          <span class="select-check"><span class="checkmark">✓</span></span>
+        </div>
+        <div class="caption">
+          <span>#${i + 1} · ${p.username}</span>
+          <span class="count">${p.likeCount} ♥</span>
         </div>`;
-      list.appendChild(row);
+      card.addEventListener('click', () => {
+        if (selectedIds.has(p.id)) selectedIds.delete(p.id);
+        else selectedIds.add(p.id);
+        card.classList.toggle('selected');
+        updateDownloadSelectedButton();
+      });
+      grid.appendChild(card);
     });
+
+    updateDownloadSelectedButton();
   }
 
   // ---------- Init ----------
@@ -312,7 +336,14 @@
     username = null;
     localStorage.removeItem(STORAGE_KEY);
     voteOrder = null;
+    selectedIds = new Set();
     render();
+  });
+
+  el('downloadSelectedBtn').addEventListener('click', () => {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds].join(',');
+    window.location.href = '/api/download?ids=' + encodeURIComponent(ids);
   });
 
   wireUpload();

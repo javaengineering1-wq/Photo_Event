@@ -223,6 +223,44 @@ app.post('/api/like', (req, res) => {
   }
 });
 
+app.get('/api/download', (req, res) => {
+  const config = getConfig();
+  const phase = getPhase(config, new Date());
+  if (phase !== 'results') {
+    return res.status(403).json({ error: 'Downloads open once results are in.' });
+  }
+
+  let selected = [...store.photos].sort((a, b) => a.uploaded_at - b.uploaded_at);
+  if (req.query.ids) {
+    const idSet = new Set(String(req.query.ids).split(',').map((s) => s.trim()).filter(Boolean));
+    selected = selected.filter((p) => idSet.has(p.id));
+    if (selected.length === 0) {
+      return res.status(404).json({ error: 'No matching photos.' });
+    }
+  }
+
+  const label = req.query.ids ? 'selected-photos' : 'all-photos';
+  res.attachment(`photo-contest-${label}-${Date.now()}.zip`);
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('Download failed:', err);
+    if (!res.headersSent) res.status(500);
+    res.end();
+  });
+  archive.pipe(res);
+
+  selected.forEach((p, i) => {
+    const filePath = path.join(UPLOAD_DIR, p.filename);
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(p.filename);
+      const safeName = `${String(i + 1).padStart(3, '0')}_${p.username}${ext}`;
+      archive.file(filePath, { name: safeName });
+    }
+  });
+
+  archive.finalize();
+});
+
 app.get('/api/results', (req, res) => {
   const withCounts = store.photos.map((r) => photoToPublic(r, null));
   withCounts.sort((a, b) => b.likeCount - a.likeCount || a.uploadedAt - b.uploadedAt);
