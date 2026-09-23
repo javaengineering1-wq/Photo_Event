@@ -110,6 +110,24 @@
     }
   }
 
+  function renderExistingUsers() {
+    const grid = el('existingUsersGrid');
+    grid.innerHTML = '';
+    el('noExistingUsers').classList.toggle('hidden', usersList.length > 0);
+    usersList.forEach((u) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'user-pick';
+      btn.textContent = u;
+      btn.addEventListener('click', () => {
+        username = u;
+        localStorage.setItem(STORAGE_KEY, u);
+        render();
+      });
+      grid.appendChild(btn);
+    });
+  }
+
   function showLoginError(msg) {
     el('loginMsg').innerHTML = `<div class="error-msg">${msg}</div>`;
   }
@@ -153,16 +171,19 @@
       return;
     }
 
+    await loadUsers();
+
     if (!username) {
+      renderExistingUsers();
       showScreen('login');
       return;
     }
 
     // If this username is no longer registered (e.g. an admin removed it), log out.
-    await loadUsers();
     if (!usersList.includes(username)) {
       username = null;
       localStorage.removeItem(STORAGE_KEY);
+      renderExistingUsers();
       showScreen('login');
       return;
     }
