@@ -237,9 +237,8 @@
       const card = document.createElement('div');
       card.className = 'photo-card';
       card.innerHTML = `
-        <img class="ph-img" src="${p.url}" alt="Photo by ${p.username}" loading="lazy" />
-        <div class="ph-meta">
-          <span class="ph-user">${p.username}</span>
+        <img class="ph-img" src="${p.url}" alt="Contest photo" loading="lazy" />
+        <div class="ph-meta ph-meta-end">
           <button class="like-btn ${p.likedByMe ? 'liked' : ''}" data-id="${p.id}">
             <span class="heart">${p.likedByMe ? '♥' : '♡'}</span>
             <span class="count">${p.likeCount}</span>
