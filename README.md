@@ -18,10 +18,11 @@ Everyone sees the same phase at the same time, computed from the server's
 clock — it doesn't matter what timezone a guest's phone is set to.
 
 **Important:** this uses simple, "honor system" identification, not real
-accounts. Anyone can type/tap any name from the list you set up — there are
-no passwords for guests. That's by design (keeps it frictionless for a
-party/event), but don't use it for anything where impersonation would be a
-real problem.
+accounts. Guests type their own name to join — the app only guarantees each
+name is unique at any given time, not that the person typing it is who they
+claim to be, and there are no passwords. That's by design (keeps it
+frictionless for a party/event), but don't use it for anything where
+impersonation would be a real problem.
 
 ## Project layout
 
@@ -60,8 +61,11 @@ Then open:
 1. Go to `/admin.html` and enter your admin password.
 2. Under **Event timing**, set when the event starts and ends, and how many
    hours the voting window should stay open after it ends (default 24).
-3. Under **Guest list**, paste one name per line — this is the exact list
-   guests will pick from. Re-saving replaces the whole list.
+3. Guests pick their own username the first time they visit — no setup
+   needed here. The **Registered guests** section shows who's joined and
+   lets you remove someone (a typo, a troll, a name you want to free up);
+   saving that list replaces it entirely, so only use it to make targeted
+   removals, not as a guest list you maintain in advance.
 4. Share the plain URL (e.g. `https://your-app.example.com`) with guests —
    no login link, no account needed.
 5. During and after the event, use the **Moderation** section to delete any

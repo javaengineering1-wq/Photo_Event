@@ -110,21 +110,39 @@
     }
   }
 
-  function renderLogin() {
-    const grid = el('userGrid');
-    grid.innerHTML = '';
-    el('noUsers').classList.toggle('hidden', usersList.length > 0);
-    usersList.forEach((u) => {
-      const btn = document.createElement('button');
-      btn.className = 'user-pick';
-      btn.textContent = u;
-      btn.addEventListener('click', () => {
-        username = u;
-        localStorage.setItem(STORAGE_KEY, u);
-        render();
+  function showLoginError(msg) {
+    el('loginMsg').innerHTML = `<div class="error-msg">${msg}</div>`;
+  }
+  function clearLoginMsg() {
+    el('loginMsg').innerHTML = '';
+  }
+
+  async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const input = el('usernameInput');
+    const name = input.value.trim();
+    clearLoginMsg();
+    if (!name) return;
+
+    const submitBtn = el('loginSubmitBtn');
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name }),
       });
-      grid.appendChild(btn);
-    });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not join right now.');
+      username = data.username;
+      localStorage.setItem(STORAGE_KEY, username);
+      input.value = '';
+      await render();
+    } catch (err) {
+      showLoginError(err.message);
+    } finally {
+      submitBtn.disabled = false;
+    }
   }
 
   async function render() {
@@ -136,19 +154,15 @@
     }
 
     if (!username) {
-      await loadUsers();
-      renderLogin();
       showScreen('login');
       return;
     }
 
-    // If the saved username is no longer on the admin's list, log out.
-    if (usersList.length === 0) await loadUsers();
+    // If this username is no longer registered (e.g. an admin removed it), log out.
+    await loadUsers();
     if (!usersList.includes(username)) {
       username = null;
       localStorage.removeItem(STORAGE_KEY);
-      await loadUsers();
-      renderLogin();
       showScreen('login');
       return;
     }
@@ -414,11 +428,15 @@
 
   // ---------- Init ----------
 
+  el('loginForm').addEventListener('submit', handleLoginSubmit);
+
   el('switchUserBtn').addEventListener('click', () => {
     username = null;
     localStorage.removeItem(STORAGE_KEY);
     voteOrder = null;
     selectedIds = new Set();
+    el('usernameInput').value = '';
+    clearLoginMsg();
     render();
   });
 

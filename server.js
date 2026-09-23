@@ -137,6 +137,28 @@ app.get('/api/users', (req, res) => {
   res.json({ users: sortedUsers() });
 });
 
+const MAX_USERNAME_LENGTH = 24;
+
+app.post('/api/register', (req, res) => {
+  const raw = (req.body && req.body.username) || '';
+  const name = String(raw).trim();
+
+  if (!name) {
+    return res.status(400).json({ error: 'Enter a name to join with.' });
+  }
+  if (name.length > MAX_USERNAME_LENGTH) {
+    return res.status(400).json({ error: `Names can be at most ${MAX_USERNAME_LENGTH} characters.` });
+  }
+  const taken = store.users.some((u) => u.toLowerCase() === name.toLowerCase());
+  if (taken) {
+    return res.status(409).json({ error: 'That name is already taken — try another.' });
+  }
+
+  store.users.push(name);
+  saveDB();
+  res.json({ ok: true, username: name });
+});
+
 app.post('/api/upload', (req, res) => {
   const config = getConfig();
   const phase = getPhase(config, new Date());
