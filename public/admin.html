@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin · Photo Contest</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Admin</h1>
+    </div>
+    <div class="lede" style="font-size:13px;">Configure the event, manage guests, moderate photos.</div>
+  </div>
+
+  <div class="wrap">
+
+    <section id="screen-lock" class="card stack">
+      <h2>Enter admin password</h2>
+      <div class="field">
+        <label for="pw">Password</label>
+        <input type="password" id="pw" autocomplete="current-password" />
+      </div>
+      <button id="loginBtn" class="btn btn-primary btn-block">Unlock</button>
+      <div id="lockMsg"></div>
+    </section>
+
+    <section id="screen-admin" class="stack hidden">
+
+      <div class="card stack">
+        <div class="eyebrow">Event timing</div>
+        <h2>When does it run?</h2>
+        <p class="lede">Voting opens automatically the moment the event ends, and stays open for the number of hours you set below.</p>
+        <div class="field">
+          <label for="eventStart">Event starts (uploads open)</label>
+          <input type="datetime-local" id="eventStart" />
+        </div>
+        <div class="field">
+          <label for="eventEnd">Event ends (uploads close, voting opens)</label>
+          <input type="datetime-local" id="eventEnd" />
+        </div>
+        <div class="field">
+          <label for="votingHours">Voting window length (hours)</label>
+          <input type="number" id="votingHours" min="1" step="1" value="24" />
+        </div>
+        <button id="saveConfigBtn" class="btn btn-primary btn-block">Save timing</button>
+        <div id="configMsg"></div>
+        <p class="lede" id="currentPhaseInfo" style="font-size:13px;"></p>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Guest list</div>
+        <h2>Who can take part?</h2>
+        <p class="lede">One name per line. This replaces the full list — guests pick their name from exactly what you enter here.</p>
+        <div class="field">
+          <label for="usernames">Usernames</label>
+          <textarea id="usernames" rows="8" style="width:100%; background: var(--surface-raised); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:11px 12px; font-size:14px; font-family: monospace;"></textarea>
+        </div>
+        <button id="saveUsersBtn" class="btn btn-primary btn-block">Save guest list</button>
+        <div id="usersMsg"></div>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Moderation</div>
+        <h2>Uploaded photos</h2>
+        <p class="lede">Remove anything that shouldn't be in the contest.</p>
+        <div id="modGrid" class="photo-grid"></div>
+        <p id="modEmpty" class="empty hidden">No photos uploaded yet.</p>
+        <button id="exportBtn" class="btn btn-ghost btn-block">Download backup (all photos + results)</button>
+        <div id="exportMsg"></div>
+      </div>
+
+      <div class="card stack" style="border-color:#5a2e2e;">
+        <div class="eyebrow" style="color:var(--coral);">Danger zone</div>
+        <h2 style="font-size:18px;">Reset for a new event</h2>
+        <p class="lede">Deletes every uploaded photo and every like. Usernames and timing are kept.</p>
+        <button id="resetBtn" class="btn btn-ghost btn-block" style="border-color:var(--coral); color:var(--coral);">Delete all photos &amp; likes</button>
+        <div id="resetMsg"></div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <script src="/admin.js"></script>
+</body>
+</html>

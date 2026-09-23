@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Event Photo Contest</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Photo Contest</h1>
+    </div>
+    <div class="phase-row">
+      <span id="phaseChip" class="phase-chip"><span class="pip"></span><span id="phaseLabel">Loading…</span></span>
+      <span id="countdown" class="countdown"></span>
+    </div>
+    <div id="whoRow" class="who hidden">
+      Signed in as <strong id="whoName"></strong> · <button id="switchUserBtn">switch</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- Not configured yet -->
+    <section id="screen-unconfigured" class="card stack hidden">
+      <h2>Getting set up</h2>
+      <p class="lede">The event organizer hasn't configured this contest yet. Check back soon.</p>
+    </section>
+
+    <!-- Pick username -->
+    <section id="screen-login" class="card stack hidden">
+      <div class="eyebrow">Step 1</div>
+      <h2>Who are you?</h2>
+      <p class="lede">Pick your name from the list below to get started.</p>
+      <div id="userGrid" class="user-grid"></div>
+      <p id="noUsers" class="empty hidden">No usernames have been set up yet. Ask the organizer.</p>
+    </section>
+
+    <!-- Before event starts -->
+    <section id="screen-before" class="card stack hidden">
+      <div class="eyebrow">Not started yet</div>
+      <h2>The event hasn't started</h2>
+      <p class="lede">Uploads open once the event begins. Come back then to start snapping and sharing photos.</p>
+    </section>
+
+    <!-- Upload phase -->
+    <section id="screen-upload" class="stack hidden">
+      <div class="card stack">
+        <div class="eyebrow">Upload phase</div>
+        <h2>Add your photos</h2>
+        <p class="lede">Upload as many photos as you want. Everyone will vote once the event ends.</p>
+
+        <label for="fileInput" class="dropzone" id="dropzone">
+          <div>Tap to choose a photo, or take one now</div>
+        </label>
+        <input type="file" id="fileInput" accept="image/*" capture="environment" />
+
+        <div id="uploadMsg"></div>
+      </div>
+
+      <div class="card stack">
+        <h3 style="font-size:16px;">Your uploads (<span id="mineCount">0</span>)</h3>
+        <div id="mineGrid" class="photo-grid"></div>
+        <p id="mineEmpty" class="empty hidden">No photos yet — you're the first!</p>
+      </div>
+    </section>
+
+    <!-- Voting phase -->
+    <section id="screen-voting" class="stack hidden">
+      <div class="card stack">
+        <div class="eyebrow">Voting is open</div>
+        <h2>Like your favorites</h2>
+        <p class="lede">Tap the heart on any photo you love. You can like as many as you want, once each.</p>
+      </div>
+      <div id="voteGrid" class="photo-grid voting"></div>
+      <p id="voteEmpty" class="empty hidden">No photos were uploaded during the event.</p>
+    </section>
+
+    <!-- Results phase -->
+    <section id="screen-results" class="stack hidden">
+      <div class="card stack">
+        <div class="eyebrow">Voting has closed</div>
+        <h2>And the winner is…</h2>
+        <div id="podium" class="podium"></div>
+      </div>
+      <div class="card stack">
+        <h3 style="font-size:16px;">Full results</h3>
+        <div id="resultsList" class="stack"></div>
+      </div>
+    </section>
+
+    <p class="footer-note">Built for one event, one album, one winner.</p>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
