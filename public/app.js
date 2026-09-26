@@ -223,6 +223,42 @@
     });
   }
 
+  // Races a promise against a timeout. If the promise doesn't settle in
+  // time, or it rejects, we resolve with fallbackValue instead of leaving
+  // the caller hanging. iOS Safari has a known issue where canvas.toBlob()
+  // can silently never call its callback under memory pressure (e.g. a
+  // very large photo), so without this a stuck resize would hang the
+  // upload forever with no error and no way forward.
+  function withFallback(promise, ms, fallbackValue) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          console.warn(`Photo prep took longer than ${ms}ms, using the original file instead.`);
+          resolve(fallbackValue);
+        }
+      }, ms);
+      promise.then(
+        (result) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+          }
+        },
+        (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            console.warn('Falling back to the original photo file for upload:', err);
+            resolve(fallbackValue);
+          }
+        }
+      );
+    });
+  }
+
   async function prepareImageForUpload(file) {
     let bitmap = null;
     let objectUrl = null;
@@ -296,7 +332,9 @@
     const msg = el('uploadMsg');
     msg.innerHTML = '<p class="lede">Preparing photo…</p>';
 
-    const preparedFile = await prepareImageForUpload(originalFile);
+    // 8s is generous for resizing a phone photo; if it's not done by then,
+    // something's stuck (see withFallback above) and we upload as-is instead.
+    const preparedFile = await withFallback(prepareImageForUpload(originalFile), 8000, originalFile);
 
     msg.innerHTML = '<p class="lede">Uploading…</p>';
     const controller = new AbortController();

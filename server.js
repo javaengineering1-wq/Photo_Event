@@ -107,7 +107,12 @@ const upload = multer({
   // for the rare case that falls back to sending the original file untouched.
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^image\//.test(file.mimetype)) cb(null, true);
+    // iOS Safari sometimes reports an empty/blank mimetype for HEIC photos
+    // picked from the library, so we also accept based on file extension
+    // rather than trusting the reported mimetype alone.
+    const looksLikeImage =
+      /^image\//.test(file.mimetype) || /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(file.originalname || '');
+    if (looksLikeImage) cb(null, true);
     else cb(new Error('Only image files are allowed.'));
   },
 });
