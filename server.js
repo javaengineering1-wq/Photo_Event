@@ -102,17 +102,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  // The browser resizes/re-encodes photos before sending them, so most
-  // uploads land well under 1-2MB. This higher ceiling is just a safety net
-  // for the rare case that falls back to sending the original file untouched.
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // iOS Safari sometimes reports an empty/blank mimetype for HEIC photos
-    // picked from the library, so we also accept based on file extension
-    // rather than trusting the reported mimetype alone.
-    const looksLikeImage =
-      /^image\//.test(file.mimetype) || /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(file.originalname || '');
-    if (looksLikeImage) cb(null, true);
+    if (/^image\//.test(file.mimetype)) cb(null, true);
     else cb(new Error('Only image files are allowed.'));
   },
 });

@@ -30,28 +30,19 @@
       <p class="lede">The event organizer hasn't configured this contest yet. Check back soon.</p>
     </section>
 
-    <!-- Choose or resume a username -->
+    <!-- Choose a username -->
     <section id="screen-login" class="card stack hidden">
       <div class="eyebrow">Step 1</div>
-      <h2>Join the contest</h2>
-
-      <div class="stack">
-        <p class="lede">Already picked a name? Tap it to sign back in.</p>
-        <div id="existingUsersGrid" class="user-grid"></div>
-        <p id="noExistingUsers" class="empty hidden">No one's joined yet — be the first!</p>
-      </div>
-
-      <div class="stack" style="margin-top: 4px;">
-        <p class="lede">New here? Choose a username — it just needs to be different from everyone else's.</p>
-        <form id="loginForm" class="stack" autocomplete="off">
-          <div class="field">
-            <label for="usernameInput">Your name</label>
-            <input type="text" id="usernameInput" maxlength="24" autocomplete="off" placeholder="e.g. Alex" required />
-          </div>
-          <div id="loginMsg"></div>
-          <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">Join</button>
-        </form>
-      </div>
+      <h2>Choose a username</h2>
+      <p class="lede">Pick a name to join with. It just needs to be different from everyone else's.</p>
+      <form id="loginForm" class="stack" autocomplete="off">
+        <div class="field">
+          <label for="usernameInput">Your name</label>
+          <input type="text" id="usernameInput" maxlength="24" autocomplete="off" placeholder="e.g. Alex" required />
+        </div>
+        <div id="loginMsg"></div>
+        <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">Join</button>
+      </form>
     </section>
 
     <!-- Before event starts -->
