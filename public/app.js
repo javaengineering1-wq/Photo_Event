@@ -371,8 +371,12 @@
 
   function wireUpload() {
     const input = el('fileInput');
-    const zone = el('dropzone');
-    zone.addEventListener('click', () => input.click());
+    // The upload area is a <label for="fileInput">, which already opens the
+    // native photo picker on tap with no JS needed. Do NOT also call
+    // input.click() here -- doing both was firing the picker twice per tap,
+    // and on iOS Safari that double-trigger can wipe out the just-picked
+    // file before the change handler ever sees it (the exact bug reported:
+    // pick a photo, confirm, and nothing happens with no error).
     input.addEventListener('change', () => {
       const file = input.files[0];
       if (!file) return;
