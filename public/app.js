@@ -202,6 +202,76 @@
     }
   }
 
+  // Shrinks and re-encodes a photo to a normal JPEG before it's uploaded.
+  // This sidesteps the two things that most often break phone uploads on
+  // flaky event wifi: very large files (modern phones can produce 10-25MB
+  // photos) and format quirks like HEIC. If anything here fails for any
+  // reason, we fall back to uploading the original file untouched.
+  const MAX_UPLOAD_DIMENSION = 2000;
+  const JPEG_QUALITY = 0.85;
+
+  function loadAsImageElement(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({ img, url });
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not read image'));
+      };
+      img.src = url;
+    });
+  }
+
+  async function prepareImageForUpload(file) {
+    let bitmap = null;
+    let objectUrl = null;
+    try {
+      let width;
+      let height;
+      let drawSource;
+
+      if (typeof createImageBitmap === 'function') {
+        bitmap = await createImageBitmap(file);
+        drawSource = bitmap;
+        width = bitmap.width;
+        height = bitmap.height;
+      } else {
+        const { img, url } = await loadAsImageElement(file);
+        objectUrl = url;
+        drawSource = img;
+        width = img.naturalWidth;
+        height = img.naturalHeight;
+      }
+
+      if (!width || !height) throw new Error('Image had no dimensions');
+
+      if (width > MAX_UPLOAD_DIMENSION || height > MAX_UPLOAD_DIMENSION) {
+        const scale = MAX_UPLOAD_DIMENSION / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(drawSource, 0, 0, width, height);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+      if (!blob) throw new Error('Canvas produced no image data');
+
+      const baseName = (file.name || 'photo').replace(/\.[^.]+$/, '');
+      return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+    } catch (err) {
+      console.warn('Falling back to the original photo file for upload:', err);
+      return file;
+    } finally {
+      if (bitmap && bitmap.close) bitmap.close();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   // ---------- Upload screen ----------
 
   async function renderMyUploads() {
@@ -220,29 +290,55 @@
     });
   }
 
+  const UPLOAD_TIMEOUT_MS = 45000;
+
+  async function performUpload(originalFile) {
+    const msg = el('uploadMsg');
+    msg.innerHTML = '<p class="lede">Preparing photo…</p>';
+
+    const preparedFile = await prepareImageForUpload(originalFile);
+
+    msg.innerHTML = '<p class="lede">Uploading…</p>';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+
+    try {
+      const form = new FormData();
+      form.append('username', username);
+      form.append('photo', preparedFile);
+      const res = await fetch('/api/upload', { method: 'POST', body: form, signal: controller.signal });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed.');
+      msg.innerHTML = '<div class="success-msg">Photo uploaded!</div>';
+      el('fileInput').value = '';
+      await renderMyUploads();
+      setTimeout(() => { msg.innerHTML = ''; }, 2500);
+    } catch (err) {
+      const timedOut = err.name === 'AbortError';
+      const errorText = timedOut
+        ? 'Upload timed out — the connection may be slow. Try again?'
+        : `${err.message || 'Upload failed.'} Try again?`;
+      msg.innerHTML = `<div class="error-msg">${errorText}</div>`;
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'btn btn-ghost btn-block';
+      retryBtn.style.marginTop = '10px';
+      retryBtn.textContent = 'Try again';
+      retryBtn.addEventListener('click', () => performUpload(originalFile));
+      msg.appendChild(retryBtn);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   function wireUpload() {
     const input = el('fileInput');
     const zone = el('dropzone');
     zone.addEventListener('click', () => input.click());
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const file = input.files[0];
       if (!file) return;
-      const msg = el('uploadMsg');
-      msg.innerHTML = '<p class="lede">Uploading…</p>';
-      try {
-        const form = new FormData();
-        form.append('username', username);
-        form.append('photo', file);
-        const res = await fetch('/api/upload', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Upload failed.');
-        msg.innerHTML = '<div class="success-msg">Photo uploaded!</div>';
-        input.value = '';
-        await renderMyUploads();
-        setTimeout(() => { msg.innerHTML = ''; }, 2500);
-      } catch (err) {
-        msg.innerHTML = `<div class="error-msg">${err.message}</div>`;
-      }
+      performUpload(file);
     });
   }
 

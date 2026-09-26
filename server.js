@@ -102,7 +102,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 },
+  // The browser resizes/re-encodes photos before sending them, so most
+  // uploads land well under 1-2MB. This higher ceiling is just a safety net
+  // for the rare case that falls back to sending the original file untouched.
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/^image\//.test(file.mimetype)) cb(null, true);
     else cb(new Error('Only image files are allowed.'));
