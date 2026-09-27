@@ -41,12 +41,30 @@
         <p id="noExistingUsers" class="empty hidden">No one's joined yet — be the first!</p>
       </div>
 
-      <div class="stack" style="margin-top: 4px;">
-        <p class="lede">New here? Choose a username — it just needs to be different from everyone else's.</p>
+      <!-- Shown instead of the grid above when resuming a name this device hasn't verified before -->
+      <div class="stack hidden" id="resumeBlock">
+        <p class="lede">Enter <strong id="resumeUserLabel"></strong>'s PIN to continue as them on this device.</p>
+        <form id="resumeForm" class="stack" autocomplete="off">
+          <div class="field">
+            <label for="resumePinInput">4-digit PIN</label>
+            <input type="tel" inputmode="numeric" pattern="\d{4}" id="resumePinInput" maxlength="4" autocomplete="off" required />
+          </div>
+          <div id="resumeMsg"></div>
+          <button type="submit" id="resumeSubmitBtn" class="btn btn-primary btn-block">Continue</button>
+          <button type="button" id="resumeCancelBtn" class="btn btn-ghost btn-block">Back</button>
+        </form>
+      </div>
+
+      <div class="stack" style="margin-top: 4px;" id="newUserBlock">
+        <p class="lede">New here? Choose a username and a 4-digit PIN — the PIN is just so only you can vote as you later.</p>
         <form id="loginForm" class="stack" autocomplete="off">
           <div class="field">
             <label for="usernameInput">Your name</label>
             <input type="text" id="usernameInput" maxlength="24" autocomplete="off" placeholder="e.g. Alex" required />
+          </div>
+          <div class="field">
+            <label for="pinInput">Set a 4-digit PIN</label>
+            <input type="tel" inputmode="numeric" pattern="\d{4}" id="pinInput" maxlength="4" autocomplete="off" placeholder="e.g. 4271" required />
           </div>
           <div id="loginMsg"></div>
           <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">Join</button>

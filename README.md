@@ -24,14 +24,17 @@ Everyone looking at a given event sees the same phase at the same time,
 computed from the server's clock — it doesn't matter what timezone a
 guest's phone is set to.
 
-**Important:** guest identification is "honor system," not real accounts.
-Guests type their own name to join an event — the app only guarantees each
-name is unique *within that event* at a given time, not that the person
-typing it is who they claim to be, and there are no passwords for guests.
-That's by design (keeps it frictionless for a party/event), but don't use
-it for anything where impersonation would be a real problem. Hosts, by
-contrast, do have real accounts (email + password) — that's what makes
-their events private to them.
+**Guest identity:** guests type their own name to join an event, and set a
+4-digit PIN at the same time. Returning to vote from the *same* phone is
+instant (no PIN needed again) — but claiming that name from a different
+device requires the PIN. This means a fellow guest can no longer just tap
+someone else's name and vote as them; they'd need to know that person's
+PIN. It's still lighter-weight than a real account (no email, no recovery
+flow — if a guest forgets their PIN and loses their phone's local data,
+they can't get that identity back and would need to join under a new
+name), which is the right trade-off for a party/event, but worth knowing.
+Hosts, by contrast, have real accounts (email + password) — that's what
+makes their events private to them.
 
 ## Project layout
 
@@ -88,7 +91,8 @@ first event.
 4. Copy the **guest link** shown at the top and share it however you like
    (text, email, a printed card at the event) — no login link, no account
    needed on the guest's end.
-5. Guests pick their own username the first time they visit that link — no
+5. Guests pick their own username and a 4-digit PIN the first time they
+   visit that link — no
    setup needed here. The **Registered guests** section shows who's joined
    and lets you remove someone (a typo, a troll, a name you want to free
    up); saving that list replaces it entirely, so only use it to make

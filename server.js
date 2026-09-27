@@ -17,7 +17,42 @@ const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const PORT = process.env.PORT || 3000;
-const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days, host sessions
+const GUEST_SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days, guest sessions
+
+// In-memory (not persisted -- resets on restart, which is fine) throttle
+// against PIN-guessing: after too many wrong PINs for a given event+username,
+// require a short cooldown before trying again. This isn't meant to stop a
+// determined attacker running a script; it's meant to make idle guessing by
+// another guest on their phone impractical, which is the actual threat model
+// for a party/event PIN.
+const pinAttempts = new Map(); // key: `${eventId}:${username.toLowerCase()}` -> { count, lockedUntil }
+const PIN_MAX_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS = 30 * 1000;
+
+function pinAttemptKey(eventId, username) {
+  return `${eventId}:${username.toLowerCase()}`;
+}
+function checkPinLockout(eventId, username) {
+  const entry = pinAttempts.get(pinAttemptKey(eventId, username));
+  if (entry && entry.lockedUntil && entry.lockedUntil > Date.now()) {
+    return Math.ceil((entry.lockedUntil - Date.now()) / 1000);
+  }
+  return 0;
+}
+function recordPinFailure(eventId, username) {
+  const key = pinAttemptKey(eventId, username);
+  const entry = pinAttempts.get(key) || { count: 0, lockedUntil: 0 };
+  entry.count += 1;
+  if (entry.count >= PIN_MAX_ATTEMPTS) {
+    entry.lockedUntil = Date.now() + PIN_LOCKOUT_MS;
+    entry.count = 0;
+  }
+  pinAttempts.set(key, entry);
+}
+function clearPinFailures(eventId, username) {
+  pinAttempts.delete(pinAttemptKey(eventId, username));
+}
 
 // ---------- Database ----------
 // Plain JSON file on disk, mirrored by an in-memory object. No native/compiled
@@ -37,6 +72,7 @@ function loadDB() {
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
         events: Array.isArray(parsed.events) ? parsed.events : [],
         eventUsers: Array.isArray(parsed.eventUsers) ? parsed.eventUsers : [],
+        guestSessions: Array.isArray(parsed.guestSessions) ? parsed.guestSessions : [],
         photos: Array.isArray(parsed.photos) ? parsed.photos : [],
         likes: Array.isArray(parsed.likes) ? parsed.likes : [],
       };
@@ -49,7 +85,7 @@ function loadDB() {
       }
     }
   }
-  return { hosts: [], sessions: [], events: [], eventUsers: [], photos: [], likes: [] };
+  return { hosts: [], sessions: [], events: [], eventUsers: [], guestSessions: [], photos: [], likes: [] };
 }
 
 const store = loadDB();
@@ -98,6 +134,58 @@ function eventUsersFor(eventId) {
 
 function sortedEventUsers(eventId) {
   return eventUsersFor(eventId).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function findEventUser(eventId, username) {
+  return store.eventUsers.find((u) => u.eventId === eventId && u.username.toLowerCase() === username.toLowerCase());
+}
+
+// Verifies the guest's bearer token identifies a real, still-registered
+// guest of THIS event, and returns their username -- or sends an error
+// response and returns null. Replaces the old approach of trusting a plain
+// "username" field in the request body, which let anyone act as any guest
+// just by naming them.
+function resolveGuestUsername(req, res, event) {
+  const auth = req.get('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) {
+    res.status(401).json({ error: 'Please sign in again.' });
+    return null;
+  }
+  const session = store.guestSessions.find((s) => s.token === token && s.eventId === event.id);
+  if (!session || new Date(session.expiresAt) < new Date()) {
+    res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
+    return null;
+  }
+  if (!eventUsersFor(event.id).includes(session.username)) {
+    res.status(401).json({ error: 'This username is no longer registered for this event.' });
+    return null;
+  }
+  return session.username;
+}
+
+// Same idea, but for read-only endpoints where an invalid/missing token
+// should just mean "anonymous viewer" rather than a hard error.
+function softResolveGuestUsername(req, event) {
+  const auth = req.get('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return null;
+  const session = store.guestSessions.find((s) => s.token === token && s.eventId === event.id);
+  if (!session || new Date(session.expiresAt) < new Date()) return null;
+  if (!eventUsersFor(event.id).includes(session.username)) return null;
+  return session.username;
+}
+
+function issueGuestSession(eventId, username) {
+  const token = generateToken();
+  store.guestSessions.push({
+    token,
+    eventId,
+    username,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + GUEST_SESSION_TTL_MS).toISOString(),
+  });
+  return token;
 }
 
 function photoToPublic(row, viewerUsername) {
@@ -307,6 +395,7 @@ app.delete('/api/host/events/:eventId', requireHost, (req, res) => {
   store.likes = store.likes.filter((l) => l.eventId !== event.id);
   store.photos = store.photos.filter((p) => p.eventId !== event.id);
   store.eventUsers = store.eventUsers.filter((u) => u.eventId !== event.id);
+  store.guestSessions = store.guestSessions.filter((s) => s.eventId !== event.id);
   store.events = store.events.filter((e) => e.id !== event.id);
   saveDB();
   for (const p of photos) fs.unlink(path.join(UPLOAD_DIR, p.filename), () => {});
@@ -320,10 +409,33 @@ app.post('/api/host/events/:eventId/users', requireHost, (req, res) => {
 
   const { usernames } = req.body || {};
   if (!Array.isArray(usernames)) return res.status(400).json({ error: 'usernames must be an array.' });
-  const clean = [...new Set(usernames.map((u) => String(u).trim()).filter(Boolean))];
+  const cleanInput = [...new Set(usernames.map((u) => String(u).trim()).filter(Boolean))];
 
-  store.eventUsers = store.eventUsers.filter((u) => u.eventId !== event.id);
-  for (const username of clean) store.eventUsers.push({ eventId: event.id, username });
+  // Preserve each kept guest's existing record (their PIN, in particular) --
+  // a bulk save here should only add/remove names, never silently strip an
+  // existing guest's PIN out from under them. Only genuinely new names (not
+  // matched to an existing one, case-insensitively) get a fresh, unclaimed
+  // placeholder record -- unclaimed until someone registers that exact name
+  // with a PIN of their own.
+  const existing = store.eventUsers.filter((u) => u.eventId === event.id);
+  const existingByLower = new Map(existing.map((u) => [u.username.toLowerCase(), u]));
+
+  const finalUsers = [];
+  const seenLower = new Set();
+  for (const name of cleanInput) {
+    const lower = name.toLowerCase();
+    if (seenLower.has(lower)) continue;
+    seenLower.add(lower);
+    const match = existingByLower.get(lower);
+    finalUsers.push(match || { eventId: event.id, username: name, pinHash: null });
+  }
+
+  const keptUsernamesLower = new Set(finalUsers.map((u) => u.username.toLowerCase()));
+  store.eventUsers = store.eventUsers.filter((u) => u.eventId !== event.id).concat(finalUsers);
+  // Anyone removed from the list loses their active sessions too.
+  store.guestSessions = store.guestSessions.filter(
+    (s) => s.eventId !== event.id || keptUsernamesLower.has(s.username.toLowerCase())
+  );
   saveDB();
 
   res.json({ ok: true, users: sortedEventUsers(event.id) });
@@ -455,24 +567,72 @@ app.get('/api/e/:slug/users', (req, res) => {
 });
 
 const MAX_USERNAME_LENGTH = 24;
+const PIN_RE = /^\d{4}$/;
 
-app.post('/api/e/:slug/register', (req, res) => {
+app.post('/api/e/:slug/register', async (req, res) => {
   const event = loadEventBySlug(req, res);
   if (!event) return;
 
-  const raw = (req.body && req.body.username) || '';
-  const name = String(raw).trim();
+  const name = String((req.body && req.body.username) || '').trim();
+  const pin = String((req.body && req.body.pin) || '').trim();
 
   if (!name) return res.status(400).json({ error: 'Enter a name to join with.' });
   if (name.length > MAX_USERNAME_LENGTH) {
     return res.status(400).json({ error: `Names can be at most ${MAX_USERNAME_LENGTH} characters.` });
   }
-  const taken = eventUsersFor(event.id).some((u) => u.toLowerCase() === name.toLowerCase());
-  if (taken) return res.status(409).json({ error: 'That name is already taken — try another.' });
+  if (!PIN_RE.test(pin)) return res.status(400).json({ error: 'Set a 4-digit PIN (numbers only).' });
 
-  store.eventUsers.push({ eventId: event.id, username: name });
+  const existing = findEventUser(event.id, name);
+  if (existing && existing.pinHash) {
+    return res.status(409).json({ error: 'That name is already taken — try another.' });
+  }
+
+  const pinHash = await bcrypt.hash(pin, 10);
+  let record;
+  if (existing) {
+    // A host pre-seeded this name with no PIN yet -- claim it rather than
+    // rejecting as a duplicate, and keep its original casing.
+    existing.pinHash = pinHash;
+    record = existing;
+  } else {
+    record = { eventId: event.id, username: name, pinHash };
+    store.eventUsers.push(record);
+  }
+  const token = issueGuestSession(event.id, record.username);
   saveDB();
-  res.json({ ok: true, username: name });
+  res.json({ ok: true, username: record.username, token });
+});
+
+app.post('/api/e/:slug/resume', async (req, res) => {
+  const event = loadEventBySlug(req, res);
+  if (!event) return;
+
+  const name = String((req.body && req.body.username) || '').trim();
+  const pin = String((req.body && req.body.pin) || '').trim();
+  if (!name || !pin) return res.status(400).json({ error: 'Enter your name and PIN.' });
+
+  const lockedForSeconds = checkPinLockout(event.id, name);
+  if (lockedForSeconds > 0) {
+    return res.status(429).json({ error: `Too many attempts. Try again in ${lockedForSeconds}s.` });
+  }
+
+  const record = findEventUser(event.id, name);
+  const genericError = { error: 'Incorrect username or PIN.' };
+  if (!record || !record.pinHash) {
+    recordPinFailure(event.id, name);
+    return res.status(401).json(genericError);
+  }
+
+  const ok = await bcrypt.compare(pin, record.pinHash);
+  if (!ok) {
+    recordPinFailure(event.id, name);
+    return res.status(401).json(genericError);
+  }
+
+  clearPinFailures(event.id, name);
+  const token = issueGuestSession(event.id, record.username);
+  saveDB();
+  res.json({ ok: true, username: record.username, token });
 });
 
 app.post('/api/e/:slug/upload', (req, res) => {
@@ -485,18 +645,11 @@ app.post('/api/e/:slug/upload', (req, res) => {
     return res.status(403).json({ error: 'Uploads are only allowed during the event window.' });
   }
 
+  const username = resolveGuestUsername(req, res, event);
+  if (!username) return; // resolveGuestUsername already sent the error response
+
   upload.single('photo')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
-
-    const { username } = req.body;
-    if (!username) {
-      if (req.file) fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'Missing username.' });
-    }
-    if (!eventUsersFor(event.id).includes(username)) {
-      if (req.file) fs.unlink(req.file.path, () => {});
-      return res.status(403).json({ error: 'Unknown username.' });
-    }
     if (!req.file) return res.status(400).json({ error: 'No photo received.' });
 
     const id = uuidv4();
@@ -518,7 +671,7 @@ app.get('/api/e/:slug/photos', (req, res) => {
   const event = loadEventBySlug(req, res);
   if (!event) return;
 
-  const viewer = req.query.username || null;
+  const viewer = softResolveGuestUsername(req, event);
   const rows = store.photos.filter((p) => p.eventId === event.id).sort((a, b) => b.uploadedAt - a.uploadedAt);
   res.json({ photos: rows.map((r) => photoToPublic(r, viewer)) });
 });
@@ -532,9 +685,12 @@ app.post('/api/e/:slug/like', (req, res) => {
   if (phase !== 'voting') {
     return res.status(403).json({ error: 'Liking is only allowed during the 24-hour voting window.' });
   }
-  const { username, photoId } = req.body || {};
-  if (!username || !photoId) return res.status(400).json({ error: 'Missing username or photoId.' });
-  if (!eventUsersFor(event.id).includes(username)) return res.status(403).json({ error: 'Unknown username.' });
+
+  const username = resolveGuestUsername(req, res, event);
+  if (!username) return;
+
+  const { photoId } = req.body || {};
+  if (!photoId) return res.status(400).json({ error: 'Missing photoId.' });
 
   const photo = store.photos.find((p) => p.id === photoId && p.eventId === event.id);
   if (!photo) return res.status(404).json({ error: 'Photo not found.' });
