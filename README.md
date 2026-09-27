@@ -1,45 +1,69 @@
 # Event Photo Contest
 
-A tiny, self-contained web app for exactly one job: during an event, guests
-upload photos from their phones; after the event, everyone gets 24 hours to
-like their favorites; then the top 3 most-liked photos are revealed.
+A web app for running photo contests at events: during the event, guests
+upload photos from their phones; after it ends, everyone gets a voting
+window (24 hours by default) to like their favorites; then the top 3
+most-liked photos are revealed.
 
-No accounts, no app install — guests just open a link, tap their name, and go.
+**This app is multi-event.** You (the host) create an account, and can run
+as many separate events as you like — a wedding, then a birthday party, then
+a work event — each fully isolated from the others, each with its own
+shareable guest link. Guests never need an account or an app install: they
+just open the link you send them, tap a username, and go.
 
 ## How it works
 
-The whole app is driven by three timestamps you (the admin) set:
+Each event is driven by three timestamps its host sets in the **host
+dashboard**:
 
 - **Event start** → uploads open
 - **Event end** → uploads close, voting opens automatically
 - **Event end + voting window (default 24h)** → voting closes, results are shown
 
-Everyone sees the same phase at the same time, computed from the server's
-clock — it doesn't matter what timezone a guest's phone is set to.
+Everyone looking at a given event sees the same phase at the same time,
+computed from the server's clock — it doesn't matter what timezone a
+guest's phone is set to.
 
-**Important:** this uses simple, "honor system" identification, not real
-accounts. Guests type their own name to join — the app only guarantees each
-name is unique at any given time, not that the person typing it is who they
-claim to be, and there are no passwords. That's by design (keeps it
-frictionless for a party/event), but don't use it for anything where
-impersonation would be a real problem.
+**Important:** guest identification is "honor system," not real accounts.
+Guests type their own name to join an event — the app only guarantees each
+name is unique *within that event* at a given time, not that the person
+typing it is who they claim to be, and there are no passwords for guests.
+That's by design (keeps it frictionless for a party/event), but don't use
+it for anything where impersonation would be a real problem. Hosts, by
+contrast, do have real accounts (email + password) — that's what makes
+their events private to them.
 
 ## Project layout
 
 ```
-server.js          Express backend: API, phase logic, JSON-file storage
+server.js            Express backend: host auth, per-event API, JSON-file storage
 public/
-  index.html/.js    Guest-facing app (login → upload → vote → results)
-  admin.html/.js    Admin panel (password-protected)
-  style.css         Shared styling
-data/               Created automatically: contest.json + uploaded photos
+  landing.html        Bare "/" -- points visitors to the host dashboard
+  host.html/.js        Host dashboard: sign in, manage all your events
+  event.html/.js/style.css   Guest-facing app for one event (login → upload → vote → results)
+  style.css            Shared styling for all three
+data/                 Created automatically: db.json + uploaded photos
 ```
 
-Storage is a plain JSON file (`data/contest.json`), not a database engine —
-this keeps the app dependency-free of anything that needs compiling, so
+Storage is a plain JSON file (`data/db.json`), not a database engine — this
+keeps the app dependency-free of anything that needs compiling, so
 `npm install` works the same on any Node version or OS with zero extra
-tools. It's not built for heavy concurrent traffic, but that's a non-issue
-at the scale of one event's worth of uploads and likes.
+tools (this includes `bcryptjs`, used for host password hashing, which is
+pure JavaScript with no native/compiled component either). This is a
+reasonable trade-off for a small number of hosts each running occasional
+events; it is **not** built for heavy concurrent traffic or a large number
+of simultaneous events, and a real database is worth considering if usage
+ever grows substantially.
+
+## URLs at a glance
+
+- `/` — a simple landing page
+- `/host` — the host dashboard (sign in / create account, manage events)
+- `/e/<slug>` — one specific event's guest page (the link you share with guests)
+
+Each event gets its own random slug (e.g. `/e/sSiH0ZEk`) when you create it
+in the dashboard — that's the link to copy and send to guests. Nothing
+about it is guessable from another event's link.
 
 ## Running it locally
 
@@ -47,48 +71,63 @@ Requires Node.js 18+.
 
 ```bash
 npm install
-cp .env.example .env
-# edit .env and set ADMIN_PASSWORD to something only you know
 npm start
 ```
 
-Then open:
-- `http://localhost:3000` — the guest app
-- `http://localhost:3000/admin.html` — the admin panel
+Then open `http://localhost:3000/host` to create a host account and your
+first event.
 
-## Setting up an event (admin panel)
+## Setting up an event (host dashboard)
 
-1. Go to `/admin.html` and enter your admin password.
-2. Under **Event timing**, set when the event starts and ends, and how many
-   hours the voting window should stay open after it ends (default 24).
-3. Guests pick their own username the first time they visit — no setup
-   needed here. The **Registered guests** section shows who's joined and
-   lets you remove someone (a typo, a troll, a name you want to free up);
-   saving that list replaces it entirely, so only use it to make targeted
-   removals, not as a guest list you maintain in advance.
-4. Share the plain URL (e.g. `https://your-app.example.com`) with guests —
-   no login link, no account needed.
-5. During and after the event, use the **Moderation** section to delete any
-   photo that shouldn't be in the contest.
-6. When you're ready to run this again for a new event, use **Reset** to
-   wipe all photos and likes while keeping your guest list.
+1. Go to `/host`, create an account (just an email and password — this is
+   your own account, stored only in this app, not shared with anything
+   else), and sign in.
+2. Click **+ Create new event** and give it a name.
+3. On the event's page, set **Event timing**: when it starts and ends, and
+   how many hours the voting window should stay open afterward.
+4. Copy the **guest link** shown at the top and share it however you like
+   (text, email, a printed card at the event) — no login link, no account
+   needed on the guest's end.
+5. Guests pick their own username the first time they visit that link — no
+   setup needed here. The **Registered guests** section shows who's joined
+   and lets you remove someone (a typo, a troll, a name you want to free
+   up); saving that list replaces it entirely, so only use it to make
+   targeted removals, not as a guest list you maintain in advance.
+6. During and after the event, use **Moderation** to delete any photo that
+   shouldn't be in the contest.
+7. Use **Download backup** any time for a zip of every photo plus the
+   current results — do this right after voting closes as your permanent
+   copy.
+8. **Reset** clears an event's photos and likes while keeping its guest
+   list and timing, for reusing the same event link again. **Delete**
+   removes the event entirely, including its guest link.
+
+Everything above is scoped to one event at a time — switching between
+events (via "← All events" on the dashboard) doesn't affect any other
+event's guests, photos, or settings.
 
 ## Deploying so guests can actually reach it (free, via Render)
 
 This needs to run somewhere reachable from guests' phones — your laptop on
 localhost won't do. [Render](https://render.com) offers a free web service
-with no credit card required, which is enough for a single event.
+with no credit card required.
 
 **The one catch:** free Render services have an *ephemeral filesystem* —
 every time the service redeploys, restarts, or "spins down" after 15
-minutes with no traffic, everything in `data/` (uploaded photos, the
-contest.json file) is wiped. Two things fix this:
+minutes with no traffic, everything in `data/` (host accounts, every
+event, all uploaded photos) is wiped. Two things fix this:
 
-1. **Keep it awake during the event** with a free uptime pinger (step 5
-   below) so it never spins down and never loses data mid-event.
-2. **Download a backup** from the admin panel's "Download backup" button
-   any time you want a safety copy of the photos and current results —
-   do this right after voting closes, before you tear anything down.
+1. **Keep it awake during any event you're running** with a free uptime
+   pinger (step 5 below) so it never spins down and never loses data
+   mid-event.
+2. **Download a backup** from each event's dashboard page any time you
+   want a safety copy — do this right after voting closes, before you
+   tear anything down.
+
+Because host accounts and *every* event now live in the same `data/`
+folder, this ephemeral-storage risk applies to your whole account, not
+just one event — worth keeping in mind before you rely on the free tier
+for anything you really don't want to lose.
 
 ### Steps
 
@@ -119,50 +158,48 @@ contest.json file) is wiped. Two things fix this:
    - **Start command:** `npm start`
    - **Instance type:** Free
 
-4. **Add the admin password.** Under Environment, add an environment
-   variable `ADMIN_PASSWORD` set to whatever you want (don't leave it as
-   `change-me`). Render sets `PORT` itself — you don't need to add it.
-   Click **Deploy**. After a couple of minutes you'll get a live URL like
-   `https://your-app.onrender.com`.
+   No environment variables are required to get started — Render sets
+   `PORT` itself, and host accounts are created through `/host`, not an
+   env var. Click **Deploy**. After a couple of minutes you'll get a live
+   URL like `https://your-app.onrender.com`.
 
-5. **Set up a free keep-alive ping** so the service doesn't spin down and
-   wipe your data during the event. Use a free monitor like
+4. **Set up a free keep-alive ping** so the service doesn't spin down and
+   wipe your data during an event. Use a free monitor like
    [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org):
-   point it at `https://your-app.onrender.com/api/status` every 5–10
+   point it at `https://your-app.onrender.com/api/e/<any-slug>/status` (any
+   real event's status endpoint works fine as a ping target) every 5–10
    minutes, starting a little before your event and running through the
-   end of the 24-hour voting window. Turn it off (or ignore it) after
-   that — you don't need it once the results are in.
+   end of the voting window.
 
-6. **Configure the event** at `https://your-app.onrender.com/admin.html`
-   exactly as you did locally: set the timing and guest list.
+5. **Create your host account and event** at
+   `https://your-app.onrender.com/host`, exactly as you did locally.
 
-7. **Right after voting closes**, open the admin panel and click
-   **Download backup** to save a zip of every photo and the final results
-   to your own computer — your permanent copy, independent of Render.
-
-Whatever host you use, always set `ADMIN_PASSWORD` as an environment
-variable on the host itself (not by uploading your `.env` file), and rely
-on Render's automatic HTTPS so the password isn't sent in plain text.
+6. **Right after voting closes**, open that event's dashboard page and
+   click **Download backup** to save a zip of every photo and the final
+   results to your own computer — your permanent copy, independent of
+   Render.
 
 ### If you outgrow the free tier
 
-For a bigger event, more reliability, or to skip the keep-alive-ping
-workaround entirely, upgrade the Render service to a paid instance type
-(Starter is a few dollars/month), attach a **persistent disk** (e.g.
-mounted at `/var/data`), and set the environment variable `DATA_DIR=/var/data`.
-The app will then store uploads and contest.json on that disk, which
-survives restarts and redeploys automatically — no pinger needed.
+For more reliability, more simultaneous events, or to skip the
+keep-alive-ping workaround entirely, upgrade the Render service to a paid
+instance type (Starter is a few dollars/month) and attach a **persistent
+disk** (e.g. mounted at `/var/data`), then set the environment variable
+`DATA_DIR=/var/data`. The app will then store host accounts, events, and
+uploads on that disk, which survives restarts and redeploys automatically —
+no pinger needed.
 
 ## A couple of practical notes
 
-- **iPhone photos (HEIC):** most modern mobile browsers convert photos to
-  JPEG automatically when uploading through a web form, so this generally
-  isn't an issue. If a guest's phone is set to the older "High Efficiency"
-  camera format and their browser doesn't convert it, the photo may not
-  preview correctly for other guests. If that comes up, you can ask guests
-  to check Settings → Camera → Formats → "Most Compatible" on iOS.
-- **Photo size:** uploads are capped at 15MB per photo — plenty for a phone
-  photo, and keeps storage/bandwidth reasonable for a full event's worth of
-  uploads.
+- **iPhone photos:** every photo is resized and re-encoded to a standard
+  JPEG in the guest's browser before it's uploaded, which sidesteps both
+  oversized modern phone photos and HEIC format quirks. If that step fails
+  for any reason, the app falls back to uploading the original file
+  untouched.
+- **Photo size:** uploads are capped at 25MB per photo as a safety net for
+  that fallback case — in the normal case, resized uploads land well under
+  1-2MB.
 - **Duplicate/self-likes:** everyone (including the photo's own uploader)
   can like any photo exactly once; tapping again un-likes it.
+- **Host sessions** last 30 days before you need to sign in again on a
+  given device.

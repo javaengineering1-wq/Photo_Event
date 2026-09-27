@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Host Dashboard · Photo Contest</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Host Dashboard</h1>
+    </div>
+    <div id="hostWhoRow" class="who hidden">
+      Signed in as <strong id="hostEmail"></strong> · <button id="signOutBtn" type="button">sign out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- Sign in / register -->
+    <section id="screen-auth" class="card stack hidden">
+      <div class="eyebrow" id="authEyebrow">Sign in</div>
+      <h2 id="authHeading">Welcome back</h2>
+      <form id="authForm" class="stack" autocomplete="off">
+        <div class="field">
+          <label for="authEmail">Email</label>
+          <input type="email" id="authEmail" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="authPassword">Password</label>
+          <input type="password" id="authPassword" autocomplete="current-password" minlength="8" required />
+        </div>
+        <div id="authMsg"></div>
+        <button type="submit" id="authSubmitBtn" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+      <p class="lede" style="text-align:center;">
+        <span id="authToggleLede">New here?</span>
+        <button type="button" id="authToggleBtn" style="background:none;border:none;color:var(--gold);cursor:pointer;text-decoration:underline;padding:0;font-size:inherit;">Create an account</button>
+      </p>
+    </section>
+
+    <!-- Event list -->
+    <section id="screen-events" class="stack hidden">
+      <div class="card stack">
+        <div class="eyebrow">Your events</div>
+        <h2>Events</h2>
+        <div id="eventsList" class="stack"></div>
+        <p id="eventsEmpty" class="empty hidden">No events yet — create your first one below.</p>
+        <button id="newEventBtn" type="button" class="btn btn-primary btn-block">+ Create new event</button>
+      </div>
+    </section>
+
+    <!-- Create event -->
+    <section id="screen-create" class="card stack hidden">
+      <div class="eyebrow">New event</div>
+      <h2>Name your event</h2>
+      <form id="createForm" class="stack" autocomplete="off">
+        <div class="field">
+          <label for="createName">Event name</label>
+          <input type="text" id="createName" maxlength="60" placeholder="e.g. Sam &amp; Alex's Wedding" required />
+        </div>
+        <div id="createMsg"></div>
+        <button type="submit" class="btn btn-primary btn-block">Create event</button>
+        <button type="button" id="createCancelBtn" class="btn btn-ghost btn-block">Cancel</button>
+      </form>
+    </section>
+
+    <!-- Event detail / management -->
+    <section id="screen-detail" class="stack hidden">
+      <button id="backToEventsBtn" type="button" class="btn btn-ghost" style="width:auto;">&larr; All events</button>
+
+      <div class="card stack">
+        <div class="eyebrow">Share this with guests</div>
+        <h2 id="detailEventName">Event</h2>
+        <div class="field">
+          <label>Guest link</label>
+          <input type="text" id="guestLinkField" readonly style="font-family:monospace;font-size:13px;" />
+        </div>
+        <button id="copyLinkBtn" type="button" class="btn btn-primary btn-block">Copy link</button>
+        <p class="lede" id="detailPhaseInfo" style="font-size:13px;"></p>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Event timing</div>
+        <h2 style="font-size:18px;">When does it run?</h2>
+        <p class="lede">Voting opens automatically the moment the event ends, and stays open for the number of hours you set below.</p>
+        <div class="field">
+          <label for="eventStart">Event starts (uploads open)</label>
+          <input type="datetime-local" id="eventStart" />
+        </div>
+        <div class="field">
+          <label for="eventEnd">Event ends (uploads close, voting opens)</label>
+          <input type="datetime-local" id="eventEnd" />
+        </div>
+        <div class="field">
+          <label for="votingHours">Voting window length (hours)</label>
+          <input type="number" id="votingHours" min="1" step="1" value="24" />
+        </div>
+        <button id="saveConfigBtn" type="button" class="btn btn-primary btn-block">Save timing</button>
+        <div id="configMsg"></div>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Registered guests</div>
+        <h2 style="font-size:18px;">Who's joined so far</h2>
+        <p class="lede">Guests pick their own name when they visit — names must be unique per event. You don't need to pre-fill this. Use it to remove someone; saving replaces the whole list.</p>
+        <div class="field">
+          <label for="usernames">Usernames</label>
+          <textarea id="usernames" rows="6" style="width:100%; background: var(--surface-raised); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:11px 12px; font-size:14px; font-family: monospace;"></textarea>
+        </div>
+        <button id="saveUsersBtn" type="button" class="btn btn-primary btn-block">Save guest list</button>
+        <div id="usersMsg"></div>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Moderation</div>
+        <h2 style="font-size:18px;">Uploaded photos</h2>
+        <div id="modGrid" class="photo-grid"></div>
+        <p id="modEmpty" class="empty hidden">No photos uploaded yet.</p>
+      </div>
+
+      <div class="card stack">
+        <div class="eyebrow">Backup</div>
+        <h2 style="font-size:18px;">Download everything</h2>
+        <p class="lede">Grab a zip of every photo plus the results, any time.</p>
+        <a id="exportBtn" href="#" class="btn btn-ghost btn-block">Download backup</a>
+      </div>
+
+      <div class="card stack" style="border-color:#5a2e2e;">
+        <div class="eyebrow" style="color:var(--coral);">Danger zone</div>
+        <h2 style="font-size:18px;">Reset or delete</h2>
+        <p class="lede">Reset clears all photos and likes but keeps your guest list and timing. Delete removes this event entirely.</p>
+        <button id="resetBtn" type="button" class="btn btn-ghost btn-block" style="border-color:var(--coral); color:var(--coral);">Reset photos &amp; likes</button>
+        <button id="deleteEventBtn" type="button" class="btn btn-ghost btn-block" style="border-color:var(--coral); color:var(--coral);">Delete this event</button>
+        <div id="dangerMsg"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="/host.js"></script>
+</body>
+</html>
