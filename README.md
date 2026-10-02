@@ -63,10 +63,28 @@ ever grows substantially.
 - `/` — a simple landing page
 - `/host` — the host dashboard (sign in / create account, manage events)
 - `/e/<slug>` — one specific event's guest page (the link you share with guests)
+- `/privacy` — privacy policy (needs your contact email filled in before you publish — see below)
+- `/delete-account` — lets a host permanently delete their account and all its data by entering their email and password, without needing to be signed in or have the app installed
 
 Each event gets its own random slug (e.g. `/e/sSiH0ZEk`) when you create it
 in the dashboard — that's the link to copy and send to guests. Nothing
 about it is guessable from another event's link.
+
+## Before you publish anywhere public
+
+- **Fill in a real contact email** in `public/privacy.html` — it currently
+  has a placeholder marked `[add a real contact email here before publishing]`.
+- **Account deletion** is available two ways: in the dashboard itself
+  (Events screen → Danger zone), and standalone at `/delete-account` for
+  anyone who wants to delete their account without opening the app at all.
+  Both permanently delete the host's account, every event they created,
+  and every photo in those events — this can't be undone, and there's no
+  "are you sure, one more time" beyond the password re-entry and
+  confirmation dialog already built in.
+- If you ever list this on the Play Store, both the Data Safety form and
+  your store listing will ask for a privacy policy URL and (since this app
+  supports account creation) an account-deletion URL — use `/privacy` and
+  `/delete-account` for those.
 
 ## Running it locally
 

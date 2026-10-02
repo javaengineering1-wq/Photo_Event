@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Delete Account · Photo Contest</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Delete your account</h1>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section id="screen-form" class="card stack">
+      <p class="lede">This permanently deletes your host account and everything tied to it: every event you've created, every photo uploaded to those events, and every guest list. This cannot be undone, and you don't need the app installed to do this.</p>
+      <form id="deleteForm" class="stack" autocomplete="off">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" required />
+        </div>
+        <label style="display:flex; align-items:flex-start; gap:10px; font-size:13px; color:var(--text-muted); cursor:pointer;">
+          <input type="checkbox" id="confirmCheck" required style="margin-top:3px;" />
+          <span>I understand this permanently deletes my account, every event I've created, and every photo in those events, and cannot be undone.</span>
+        </label>
+        <div id="deleteMsg"></div>
+        <button type="submit" id="deleteSubmitBtn" class="btn btn-block" style="background:var(--coral); color:#2a0d09;">Permanently delete my account</button>
+      </form>
+    </section>
+
+    <section id="screen-done" class="card stack hidden">
+      <div class="eyebrow">Done</div>
+      <h2>Your account has been deleted</h2>
+      <p class="lede">Your account, your events, and every photo in them have been permanently removed.</p>
+    </section>
+
+    <p class="footer-note"><a href="/privacy">Privacy Policy</a></p>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+
+    el('deleteForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = el('email').value.trim();
+      const password = el('password').value;
+      const msg = el('deleteMsg');
+      msg.innerHTML = '';
+
+      if (!confirm('This is permanent and cannot be undone. Delete your account and all its data now?')) {
+        return;
+      }
+
+      const submitBtn = el('deleteSubmitBtn');
+      submitBtn.disabled = true;
+      try {
+        const res = await fetch('/api/host/delete-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not delete account.');
+        el('screen-form').classList.add('hidden');
+        el('screen-done').classList.remove('hidden');
+      } catch (err) {
+        msg.innerHTML = `<div class="error-msg">${err.message}</div>`;
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+
+</body>
+</html>

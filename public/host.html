@@ -51,6 +51,18 @@
         <p id="eventsEmpty" class="empty hidden">No events yet — create your first one below.</p>
         <button id="newEventBtn" type="button" class="btn btn-primary btn-block">+ Create new event</button>
       </div>
+
+      <div class="card stack" style="border-color:#5a2e2e;">
+        <div class="eyebrow" style="color:var(--coral);">Danger zone</div>
+        <h2 style="font-size:18px;">Delete your account</h2>
+        <p class="lede">Permanently deletes your account, every event you've created, and every photo in those events. This cannot be undone. (You can also do this without the app, from the <a href="/delete-account" target="_blank" rel="noopener">account deletion page</a>.)</p>
+        <div class="field">
+          <label for="deleteAccountPassword">Confirm your password</label>
+          <input type="password" id="deleteAccountPassword" autocomplete="current-password" />
+        </div>
+        <div id="deleteAccountMsg"></div>
+        <button id="deleteAccountBtn" type="button" class="btn btn-block" style="border:1px solid var(--coral); background:transparent; color:var(--coral);">Permanently delete my account</button>
+      </div>
     </section>
 
     <!-- Create event -->

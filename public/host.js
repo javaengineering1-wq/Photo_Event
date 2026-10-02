@@ -16,6 +16,47 @@
   let currentEventId = null;
   let currentEvent = null;
 
+  // ---------- Native app integration ----------
+  // These calls only do anything when this page is running inside the
+  // Capacitor Android shell (Capacitor injects window.Capacitor into the
+  // page regardless of whether it's loaded locally or, as here, from this
+  // live URL). In a normal browser tab, window.Capacitor is undefined and
+  // every native-only code path below is skipped automatically.
+
+  function isNativeApp() {
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  }
+
+  let splashHidden = false;
+  function hideNativeSplashOnce() {
+    if (splashHidden || !isNativeApp()) return;
+    splashHidden = true;
+    try {
+      window.Capacitor.Plugins.SplashScreen.hide();
+    } catch (_) {
+      /* ignore -- worst case the splash sits a moment longer, not a crash */
+    }
+  }
+  // Safety net: never leave someone staring at the splash screen forever
+  // just because something above threw before reaching a hide() call.
+  if (isNativeApp()) setTimeout(hideNativeSplashOnce, 4000);
+
+  function setupNativeOfflineBanner() {
+    if (!isNativeApp() || !window.Capacitor.Plugins.Network) return;
+    const banner = document.createElement('div');
+    banner.textContent = "You're offline — changes won't save until you're back online.";
+    banner.style.cssText =
+      'position:fixed; top:0; left:0; right:0; z-index:2000; background:var(--coral); color:#2a0d09; ' +
+      'font-size:13px; font-weight:600; text-align:center; padding:8px 12px; padding-top:calc(8px + env(safe-area-inset-top, 0px)); display:none;';
+    document.body.prepend(banner);
+
+    const applyStatus = (status) => {
+      banner.style.display = status.connected ? 'none' : 'block';
+    };
+    window.Capacitor.Plugins.Network.getStatus().then(applyStatus).catch(() => {});
+    window.Capacitor.Plugins.Network.addListener('networkStatusChange', applyStatus);
+  }
+
   function showScreen(name) {
     Object.entries(screens).forEach(([key, node]) => {
       node.classList.toggle('hidden', key !== name);
@@ -126,6 +167,33 @@
     signOut();
   });
 
+  el('deleteAccountBtn').addEventListener('click', async () => {
+    const password = el('deleteAccountPassword').value;
+    const msg = el('deleteAccountMsg');
+    msg.innerHTML = '';
+    if (!password) {
+      msg.innerHTML = '<div class="error-msg">Enter your password to confirm.</div>';
+      return;
+    }
+    if (
+      !confirm(
+        'This permanently deletes your account, every event you\'ve created, and every photo in them. This cannot be undone. Continue?'
+      )
+    ) {
+      return;
+    }
+    try {
+      await api('/api/host/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      signOut();
+    } catch (err) {
+      msg.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    }
+  });
+
   // ---------- Events list ----------
 
   function phaseLabel(phase) {
@@ -219,10 +287,24 @@
 
   el('copyLinkBtn').addEventListener('click', async () => {
     const field = el('guestLinkField');
+    const btn = el('copyLinkBtn');
+
+    if (isNativeApp() && window.Capacitor.Plugins.Share) {
+      try {
+        await window.Capacitor.Plugins.Share.share({
+          title: currentEvent ? currentEvent.name : 'Photo contest',
+          text: currentEvent ? `Join the photo contest for ${currentEvent.name}!` : 'Join the photo contest!',
+          url: field.value,
+        });
+      } catch (_) {
+        /* user backed out of the share sheet -- not an error */
+      }
+      return;
+    }
+
     field.select();
     try {
       await navigator.clipboard.writeText(field.value);
-      const btn = el('copyLinkBtn');
       const original = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(() => {
@@ -329,11 +411,19 @@
 
   // ---------- Init ----------
 
+  if (isNativeApp()) {
+    el('copyLinkBtn').textContent = 'Share link';
+    setupNativeOfflineBanner();
+  }
+
   setAuthMode('login');
   renderWhoRow();
   if (token) {
-    showEventsList().catch(() => signOut());
+    showEventsList()
+      .catch(() => signOut())
+      .finally(hideNativeSplashOnce);
   } else {
     showScreen('auth');
+    hideNativeSplashOnce();
   }
 })();

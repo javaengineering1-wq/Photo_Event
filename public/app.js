@@ -433,8 +433,33 @@
     mine.forEach((p) => {
       const div = document.createElement('div');
       div.className = 'thumb';
-      div.innerHTML = `<img src="${p.url}" alt="Your photo" loading="lazy" />`;
+      div.style.position = 'relative';
+      div.innerHTML = `
+        <img src="${p.url}" alt="Your photo" loading="lazy" />
+        <button type="button" data-id="${p.id}" title="Delete this photo"
+          style="position:absolute; top:4px; right:4px; background:rgba(18,19,42,0.85); border:1px solid var(--coral); color:var(--coral); border-radius:6px; font-size:11px; padding:3px 6px; cursor:pointer;">
+          Delete
+        </button>`;
       grid.appendChild(div);
+    });
+
+    grid.querySelectorAll('button[data-id]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this photo? This cannot be undone.')) return;
+        btn.disabled = true;
+        try {
+          const delRes = await fetch(`${API}/photos/${btn.dataset.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${guestToken}` },
+          });
+          const delData = await delRes.json().catch(() => ({}));
+          if (!delRes.ok) throw new Error(delData.error || 'Could not delete photo.');
+          await renderMyUploads();
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
+      });
     });
   }
 
