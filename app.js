@@ -1,5 +1,30 @@
 (() => {
-  const STORAGE_KEY = 'photocontest.username';
+  const STORAGE_KEY_PREFIX = 'photocontest.username.';
+  const TOKEN_KEY_PREFIX = 'photocontest.token.';
+
+  const slugMatch = window.location.pathname.match(/^\/e\/([^/]+)/);
+  const SLUG = slugMatch ? slugMatch[1] : null;
+  const API = SLUG ? `/api/e/${encodeURIComponent(SLUG)}` : null;
+  // Username is stored per-event-slug, not globally -- otherwise joining a
+  // second event on the same phone would collide with (or overwrite) your
+  // username from the first one.
+  const STORAGE_KEY = SLUG ? `${STORAGE_KEY_PREFIX}${SLUG}` : null;
+
+  // Each verified (name, this device) pair gets its own cached token, keyed
+  // by lowercase name so a device that's already proven it owns "Alex" (via
+  // registering or entering the PIN once) can tap back into that name
+  // instantly next time, without needing the PIN again. A device that has
+  // never proven it owns a given name has no token for it and must supply
+  // the PIN -- that's the actual fix for "anyone can tap any name."
+  function tokenStorageKey(name) {
+    return `${TOKEN_KEY_PREFIX}${SLUG}.${name.toLowerCase()}`;
+  }
+  function getCachedToken(name) {
+    return SLUG ? localStorage.getItem(tokenStorageKey(name)) : null;
+  }
+  function setCachedToken(name, token) {
+    if (SLUG) localStorage.setItem(tokenStorageKey(name), token);
+  }
 
   const el = (id) => document.getElementById(id);
   const screens = {
@@ -13,7 +38,8 @@
 
   let status = null;
   let clockOffsetMs = 0; // serverNow - clientNow, sampled at fetch time
-  let username = localStorage.getItem(STORAGE_KEY) || null;
+  let username = SLUG ? localStorage.getItem(STORAGE_KEY) : null;
+  let guestToken = username ? getCachedToken(username) : null;
   let usersList = [];
   let pollTimer = null;
   let countdownTimer = null;
@@ -84,18 +110,33 @@
   }
 
   async function refreshStatus() {
+    if (!SLUG) {
+      showScreen('unconfigured');
+      el('phaseLabel').textContent = 'Invalid link';
+      document.querySelector('#screen-unconfigured .lede').textContent =
+        "This doesn't look like a valid event link. Ask your host for the link they shared.";
+      return;
+    }
     const before = Date.now();
-    const res = await fetch('/api/status');
+    const res = await fetch(`${API}/status`);
+    if (res.status === 404) {
+      showScreen('unconfigured');
+      el('phaseLabel').textContent = 'Not found';
+      document.querySelector('#screen-unconfigured .lede').textContent =
+        "This event link is invalid or the event no longer exists. Ask your host for a current link.";
+      return;
+    }
     const data = await res.json();
     const after = Date.now();
     clockOffsetMs = new Date(data.serverNow).getTime() - Math.round((before + after) / 2);
     status = data;
+    if (data.eventName) document.title = data.eventName;
     setPhaseChip(status.phase);
     render();
   }
 
   async function loadUsers() {
-    const res = await fetch('/api/users');
+    const res = await fetch(`${API}/users`);
     const data = await res.json();
     usersList = data.users || [];
   }
@@ -110,6 +151,21 @@
     }
   }
 
+  function showLoginBlocks() {
+    el('resumeBlock').classList.add('hidden');
+    el('newUserBlock').classList.remove('hidden');
+  }
+
+  function showResumePrompt(name) {
+    el('resumeUserLabel').textContent = name;
+    el('resumeForm').dataset.username = name;
+    el('resumeMsg').innerHTML = '';
+    el('resumePinInput').value = '';
+    el('newUserBlock').classList.add('hidden');
+    el('resumeBlock').classList.remove('hidden');
+    el('resumePinInput').focus();
+  }
+
   function renderExistingUsers() {
     const grid = el('existingUsersGrid');
     grid.innerHTML = '';
@@ -120,9 +176,18 @@
       btn.className = 'user-pick';
       btn.textContent = u;
       btn.addEventListener('click', () => {
-        username = u;
-        localStorage.setItem(STORAGE_KEY, u);
-        render();
+        const cached = getCachedToken(u);
+        if (cached) {
+          // This device has already proven it owns this name -- resume instantly.
+          username = u;
+          guestToken = cached;
+          localStorage.setItem(STORAGE_KEY, u);
+          render();
+        } else {
+          // A different device (or a different guest) claiming this name --
+          // this is exactly the case the PIN exists to gate.
+          showResumePrompt(u);
+        }
       });
       grid.appendChild(btn);
     });
@@ -137,27 +202,63 @@
 
   async function handleLoginSubmit(e) {
     e.preventDefault();
-    const input = el('usernameInput');
-    const name = input.value.trim();
+    const nameInput = el('usernameInput');
+    const pinInput = el('pinInput');
+    const name = nameInput.value.trim();
+    const pin = pinInput.value.trim();
     clearLoginMsg();
-    if (!name) return;
+    if (!name || !pin) return;
 
     const submitBtn = el('loginSubmitBtn');
     submitBtn.disabled = true;
     try {
-      const res = await fetch('/api/register', {
+      const res = await fetch(`${API}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: name }),
+        body: JSON.stringify({ username: name, pin }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not join right now.');
       username = data.username;
+      guestToken = data.token;
       localStorage.setItem(STORAGE_KEY, username);
-      input.value = '';
+      setCachedToken(username, guestToken);
+      nameInput.value = '';
+      pinInput.value = '';
       await render();
     } catch (err) {
       showLoginError(err.message);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  async function handleResumeSubmit(e) {
+    e.preventDefault();
+    const name = el('resumeForm').dataset.username;
+    const pin = el('resumePinInput').value.trim();
+    const msg = el('resumeMsg');
+    msg.innerHTML = '';
+    if (!pin) return;
+
+    const submitBtn = el('resumeSubmitBtn');
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch(`${API}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not sign in.');
+      username = data.username;
+      guestToken = data.token;
+      localStorage.setItem(STORAGE_KEY, username);
+      setCachedToken(username, guestToken);
+      showLoginBlocks();
+      await render();
+    } catch (err) {
+      msg.innerHTML = `<div class="error-msg">${err.message}</div>`;
     } finally {
       submitBtn.disabled = false;
     }
@@ -173,16 +274,27 @@
 
     await loadUsers();
 
+    // A username with no matching token can't actually do anything (every
+    // authenticated call would just 401) -- treat it as logged out rather
+    // than showing screens the person can't use.
+    if (username && !guestToken) {
+      username = null;
+      localStorage.removeItem(STORAGE_KEY);
+    }
+
     if (!username) {
+      showLoginBlocks();
       renderExistingUsers();
       showScreen('login');
       return;
     }
 
-    // If this username is no longer registered (e.g. an admin removed it), log out.
+    // If this username is no longer registered (e.g. a host removed it), log out.
     if (!usersList.includes(username)) {
       username = null;
+      guestToken = null;
       localStorage.removeItem(STORAGE_KEY);
+      showLoginBlocks();
       renderExistingUsers();
       showScreen('login');
       return;
@@ -311,7 +423,7 @@
   // ---------- Upload screen ----------
 
   async function renderMyUploads() {
-    const res = await fetch('/api/photos?username=' + encodeURIComponent(username));
+    const res = await fetch(`${API}/photos`, { headers: { Authorization: `Bearer ${guestToken}` } });
     const data = await res.json();
     const mine = data.photos.filter((p) => p.username === username);
     el('mineCount').textContent = mine.length;
@@ -321,8 +433,33 @@
     mine.forEach((p) => {
       const div = document.createElement('div');
       div.className = 'thumb';
-      div.innerHTML = `<img src="${p.url}" alt="Your photo" loading="lazy" />`;
+      div.style.position = 'relative';
+      div.innerHTML = `
+        <img src="${p.url}" alt="Your photo" loading="lazy" />
+        <button type="button" data-id="${p.id}" title="Delete this photo"
+          style="position:absolute; top:4px; right:4px; background:rgba(18,19,42,0.85); border:1px solid var(--coral); color:var(--coral); border-radius:6px; font-size:11px; padding:3px 6px; cursor:pointer;">
+          Delete
+        </button>`;
       grid.appendChild(div);
+    });
+
+    grid.querySelectorAll('button[data-id]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this photo? This cannot be undone.')) return;
+        btn.disabled = true;
+        try {
+          const delRes = await fetch(`${API}/photos/${btn.dataset.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${guestToken}` },
+          });
+          const delData = await delRes.json().catch(() => ({}));
+          if (!delRes.ok) throw new Error(delData.error || 'Could not delete photo.');
+          await renderMyUploads();
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
+      });
     });
   }
 
@@ -342,9 +479,13 @@
 
     try {
       const form = new FormData();
-      form.append('username', username);
       form.append('photo', preparedFile);
-      const res = await fetch('/api/upload', { method: 'POST', body: form, signal: controller.signal });
+      const res = await fetch(`${API}/upload`, {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${guestToken}` },
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Upload failed.');
       msg.innerHTML = '<div class="success-msg">Photo uploaded!</div>';
@@ -389,7 +530,7 @@
   let voteOrder = null; // shuffled photo ids, fixed per session so the grid doesn't jump
 
   async function renderVoting() {
-    const res = await fetch('/api/photos?username=' + encodeURIComponent(username));
+    const res = await fetch(`${API}/photos`, { headers: { Authorization: `Bearer ${guestToken}` } });
     const data = await res.json();
     let photos = data.photos;
 
@@ -425,10 +566,10 @@
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
-          const res = await fetch('/api/like', {
+          const res = await fetch(`${API}/like`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, photoId: btn.dataset.id }),
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${guestToken}` },
+            body: JSON.stringify({ photoId: btn.dataset.id }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Could not like photo.');
@@ -466,7 +607,7 @@
   }
 
   function zipUrlFor(ids) {
-    return ids ? `/api/download?ids=${encodeURIComponent(ids.join(','))}` : '/api/download';
+    return ids ? `${API}/download?ids=${encodeURIComponent(ids.join(','))}` : `${API}/download`;
   }
 
   // Tries the native share sheet (which offers "Save Image(s)" straight to
@@ -512,7 +653,7 @@
   }
 
   async function renderResults() {
-    const res = await fetch('/api/results');
+    const res = await fetch(`${API}/results`);
     const data = await res.json();
     resultsPhotos = data.all;
 
@@ -588,14 +729,22 @@
   // ---------- Init ----------
 
   el('loginForm').addEventListener('submit', handleLoginSubmit);
+  el('resumeForm').addEventListener('submit', handleResumeSubmit);
+  el('resumeCancelBtn').addEventListener('click', () => {
+    showLoginBlocks();
+    render();
+  });
 
   el('switchUserBtn').addEventListener('click', () => {
     username = null;
+    guestToken = null;
     localStorage.removeItem(STORAGE_KEY);
     voteOrder = null;
     selectedIds = new Set();
     el('usernameInput').value = '';
+    el('pinInput').value = '';
     clearLoginMsg();
+    showLoginBlocks();
     render();
   });
 

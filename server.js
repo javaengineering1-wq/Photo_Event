@@ -235,6 +235,8 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
 app.get('/host', (req, res) => res.sendFile(path.join(__dirname, 'public', 'host.html')));
 app.get('/e/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'event.html')));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/delete-account', (req, res) => res.sendFile(path.join(__dirname, 'public', 'delete-account.html')));
 
 // ---------- Host auth ----------
 
@@ -322,6 +324,62 @@ app.post('/api/host/logout', requireHost, (req, res) => {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   store.sessions = store.sessions.filter((s) => s.token !== token);
   saveDB();
+  res.json({ ok: true });
+});
+
+// Deletes a host account and every trace of it: all their events, those
+// events' photos (on disk too), guest lists, guest sessions, likes, and
+// the host's own sessions. Shared by both deletion endpoints below so the
+// in-app flow and the no-app-required web flow can't drift out of sync.
+function deleteHostAccount(hostId) {
+  const eventIds = store.events.filter((e) => e.hostId === hostId).map((e) => e.id);
+  const photos = store.photos.filter((p) => eventIds.includes(p.eventId));
+
+  store.likes = store.likes.filter((l) => !eventIds.includes(l.eventId));
+  store.photos = store.photos.filter((p) => !eventIds.includes(p.eventId));
+  store.eventUsers = store.eventUsers.filter((u) => !eventIds.includes(u.eventId));
+  store.guestSessions = store.guestSessions.filter((s) => !eventIds.includes(s.eventId));
+  store.events = store.events.filter((e) => e.hostId !== hostId);
+  store.sessions = store.sessions.filter((s) => s.hostId !== hostId);
+  store.hosts = store.hosts.filter((h) => h.id !== hostId);
+  saveDB();
+
+  for (const p of photos) fs.unlink(path.join(UPLOAD_DIR, p.filename), () => {});
+}
+
+// In-app path: the signed-in host deletes their own account from the dashboard.
+// Requires the password again, not just the session token -- an irreversible,
+// total-wipe action deserves that extra confirmation even for someone already
+// signed in (e.g. a session token alone, left logged in on a shared device,
+// shouldn't be enough on its own to wipe everything).
+app.delete('/api/host/account', requireHost, async (req, res) => {
+  const password = String((req.body && req.body.password) || '');
+  const host = store.hosts.find((h) => h.id === req.hostId);
+  if (!host) return res.status(401).json({ error: 'Not signed in.' });
+
+  const ok = await bcrypt.compare(password, host.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Incorrect password.' });
+
+  deleteHostAccount(req.hostId);
+  res.json({ ok: true });
+});
+
+// No-app-required path: a public page (see /delete-account) that only needs
+// the host's email and password -- satisfies Play Store's requirement for a
+// web resource where account deletion can be requested without having the
+// app installed at all.
+app.post('/api/host/delete-account', async (req, res) => {
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+  const password = String((req.body && req.body.password) || '');
+
+  const host = store.hosts.find((h) => h.email === email);
+  const genericError = { error: 'Incorrect email or password.' };
+  if (!host) return res.status(401).json(genericError);
+
+  const ok = await bcrypt.compare(password, host.passwordHash);
+  if (!ok) return res.status(401).json(genericError);
+
+  deleteHostAccount(host.id);
   res.json({ ok: true });
 });
 
@@ -665,6 +723,35 @@ app.post('/api/e/:slug/upload', (req, res) => {
 
     res.json({ ok: true, id });
   });
+});
+
+app.delete('/api/e/:slug/photos/:photoId', (req, res) => {
+  const event = loadEventBySlug(req, res);
+  if (!event) return;
+
+  const config = getEventConfig(event);
+  const phase = getPhase(config, new Date());
+  if (phase !== 'upload') {
+    return res.status(403).json({ error: 'Photos can only be removed during the upload window.' });
+  }
+
+  const username = resolveGuestUsername(req, res, event);
+  if (!username) return;
+
+  const photo = store.photos.find((p) => p.id === req.params.photoId && p.eventId === event.id);
+  if (!photo) return res.status(404).json({ error: 'Photo not found.' });
+  // Guests can only ever delete their own photos -- removing someone else's
+  // is host-only moderation (see /api/host/events/:eventId/photos/:photoId).
+  if (photo.username !== username) {
+    return res.status(403).json({ error: 'You can only delete your own photos.' });
+  }
+
+  store.likes = store.likes.filter((l) => l.photoId !== photo.id);
+  store.photos = store.photos.filter((p) => p.id !== photo.id);
+  saveDB();
+  fs.unlink(path.join(UPLOAD_DIR, photo.filename), () => {});
+
+  res.json({ ok: true });
 });
 
 app.get('/api/e/:slug/photos', (req, res) => {
