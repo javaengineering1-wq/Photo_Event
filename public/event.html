@@ -11,7 +11,7 @@
   <div class="topbar">
     <div class="brand">
       <span class="dot"></span>
-      <h1>Photo Contest</h1>
+      <h1 id="eventTitle">Photo Contest</h1>
     </div>
     <div class="phase-row">
       <span id="phaseChip" class="phase-chip"><span class="pip"></span><span id="phaseLabel">Loading…</span></span>
@@ -34,6 +34,8 @@
     <section id="screen-login" class="card stack hidden">
       <div class="eyebrow">Step 1</div>
       <h2>Join the contest</h2>
+      <button type="button" id="whatIsThisBtn" class="btn btn-ghost" style="align-self:flex-start; padding:9px 16px;" aria-expanded="false" aria-controls="infoPanel">What is this?</button>
+      <div id="infoPanel" class="info-panel hidden" role="region" aria-label="How this contest works"></div>
 
       <div class="stack">
         <p class="lede">Already picked a name? Tap it to sign back in.</p>
@@ -87,11 +89,18 @@
         <p class="lede">Upload as many photos as you want. Everyone will vote once the event ends.</p>
 
         <label for="fileInput" class="dropzone" id="dropzone">
-          <div>Tap to choose a photo from your camera roll, or take a new one</div>
+          <div>Tap to choose photos from your camera roll (pick as many as you like), or take a new one</div>
         </label>
-        <input type="file" id="fileInput" accept="image/*" />
+        <input type="file" id="fileInput" accept="image/*" multiple />
 
         <div id="uploadMsg"></div>
+      </div>
+
+      <div id="featuredCard" class="card stack hidden">
+        <div class="eyebrow">Sneak peek</div>
+        <h3 style="font-size:16px;">A photo from the album so far</h3>
+        <img id="featuredImg" class="featured-img" alt="A photo from the album" />
+        <p class="lede" id="featuredNote" style="font-size:13px;"></p>
       </div>
 
       <div class="card stack">
@@ -117,7 +126,9 @@
       <div class="card stack">
         <div class="eyebrow">Voting has closed</div>
         <h2>And the winner is…</h2>
+        <div id="winnerBanner" class="winner-banner hidden"></div>
         <div id="podium" class="podium"></div>
+        <p id="podiumOverflow" class="lede hidden" style="font-size:13px; text-align:center;"></p>
         <button id="downloadAllBtn" class="btn btn-primary btn-block" type="button">Save all photos</button>
       </div>
       <div class="card stack">

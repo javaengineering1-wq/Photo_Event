@@ -130,9 +130,117 @@
     const after = Date.now();
     clockOffsetMs = new Date(data.serverNow).getTime() - Math.round((before + after) / 2);
     status = data;
-    if (data.eventName) document.title = data.eventName;
+    if (data.eventName) {
+      document.title = data.eventName;
+      el('eventTitle').textContent = data.eventName;
+    }
     setPhaseChip(status.phase);
+    if (!el('infoPanel').classList.contains('hidden')) renderInfoPanel();
     render();
+  }
+
+  // ---------- "What is this?" (join screen) ----------
+
+  const fmtWhen = (iso) =>
+    new Date(iso).toLocaleString([], {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short', // guests can be in different time zones, so always say which
+    });
+
+  function fmtHours(h) {
+    const n = Number(h);
+    return `${n} hour${n === 1 ? '' : 's'}`;
+  }
+
+  // Explains the contest and gives the real dates, all taken from what the
+  // host set (start, end, voting length -- via the status the server sends).
+  // Wording follows where the event is right now ("opens" / "is open now" /
+  // "closed"). Built from text nodes, not innerHTML.
+  function renderInfoPanel() {
+    const panel = el('infoPanel');
+    panel.innerHTML = '';
+    if (!status) return;
+
+    const phase = status.phase;
+    // The join screen (and so this panel) only appears once the host has set a
+    // schedule -- unscheduled events show "Getting set up" instead -- so the dates
+    // are normally always there; the guard just keeps this from ever printing "undefined".
+    const configured = phase !== 'not_configured' && status.eventStart && status.eventEnd && status.votingEnd;
+
+    const intro = document.createElement('p');
+    intro.textContent =
+      'Everyone shares photos from the event, then everyone votes for their favorites. The most-liked photo wins.';
+    panel.appendChild(intro);
+
+    const when = {};
+    if (configured) {
+      const start = fmtWhen(status.eventStart);
+      const end = fmtWhen(status.eventEnd);
+      const votingEnd = fmtWhen(status.votingEnd);
+      const length = status.votingHours ? ` (${fmtHours(status.votingHours)} of voting)` : '';
+
+      when.upload =
+        phase === 'before'
+          ? `Uploads open ${start} and close ${end}.`
+          : phase === 'upload'
+            ? `Uploads are open now and close ${end}.`
+            : `Uploads closed ${end}.`;
+      when.vote =
+        phase === 'before' || phase === 'upload'
+          ? `Voting opens ${end} and closes ${votingEnd}${length}.`
+          : phase === 'voting'
+            ? `Voting is open now and closes ${votingEnd}.`
+            : `Voting closed ${votingEnd}.`;
+      when.results = phase === 'results' ? 'Results are in.' : `Results are revealed ${votingEnd}.`;
+    }
+
+    const steps = [
+      {
+        title: 'Join.',
+        detail:
+          'Pick a name and a 4-digit PIN on this screen. The PIN lets you get back into your name later, and stops anyone else from voting as you.',
+      },
+      {
+        title: 'Submit your photos.',
+        detail: 'Upload as many photos as you like. You can delete your own while uploads are open.',
+        when: when.upload,
+      },
+      {
+        title: 'Vote.',
+        detail:
+          'Once uploads close, everyone sees all the photos (no names, no like counts) and taps ♥ on their favorites. Like as many as you want, once each.',
+        when: when.vote,
+      },
+      {
+        title: 'See the results.',
+        detail:
+          'The most-liked photo wins. If photos tie, it goes to whoever has the most total likes across all their photos, then the most photos uploaded. Everyone can save the photos afterward.',
+        when: when.results,
+      },
+    ];
+
+    const list = document.createElement('ol');
+    steps.forEach((step) => {
+      const li = document.createElement('li');
+      const strong = document.createElement('strong');
+      strong.textContent = step.title;
+      const detail = document.createElement('span');
+      detail.className = 'info-detail';
+      detail.textContent = ` ${step.detail}`;
+      li.append(strong, detail);
+      if (step.when) {
+        const w = document.createElement('span');
+        w.className = 'info-when';
+        w.textContent = step.when;
+        li.appendChild(w);
+      }
+      list.appendChild(li);
+    });
+    panel.appendChild(list);
   }
 
   async function loadUsers() {
@@ -305,6 +413,7 @@
     } else if (status.phase === 'upload') {
       showScreen('upload');
       await renderMyUploads();
+      await renderFeatured();
     } else if (status.phase === 'voting') {
       showScreen('voting');
       await renderVoting();
@@ -425,7 +534,7 @@
   async function renderMyUploads() {
     const res = await fetch(`${API}/photos`, { headers: { Authorization: `Bearer ${guestToken}` } });
     const data = await res.json();
-    const mine = data.photos.filter((p) => p.username === username);
+    const mine = data.photos.filter((p) => p.mine); // the server says which are mine; it no longer sends names
     el('mineCount').textContent = mine.length;
     const grid = el('mineGrid');
     grid.innerHTML = '';
@@ -463,20 +572,52 @@
     });
   }
 
+  // The "sneak peek": one photo from the album, rotated hourly by the server.
+  // No uploader name is shown, same as the voting screen.
+  let currentFeaturedId = null;
+
+  async function renderFeatured() {
+    const card = el('featuredCard');
+    try {
+      const res = await fetch(`${API}/featured`);
+      if (!res.ok) throw new Error('featured unavailable');
+      const data = await res.json();
+      if (!data.photo) {
+        card.classList.add('hidden');
+        currentFeaturedId = null;
+        return;
+      }
+      if (data.photo.id !== currentFeaturedId) {
+        el('featuredImg').src = data.photo.url;
+        currentFeaturedId = data.photo.id;
+      }
+      const when = data.nextChangeAt
+        ? new Date(data.nextChangeAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : null;
+      el('featuredNote').textContent = when
+        ? `A new photo is featured every hour, on the hour. Next one at ${when}.`
+        : 'A new photo is featured every hour, on the hour.';
+      card.classList.remove('hidden');
+    } catch (_) {
+      card.classList.add('hidden'); // a missing preview should never get in the way of uploading
+    }
+  }
+
   const UPLOAD_TIMEOUT_MS = 45000;
 
-  async function performUpload(originalFile) {
-    const msg = el('uploadMsg');
-    msg.innerHTML = '<p class="lede">Preparing photo…</p>';
+  // Photos go up one at a time from a queue. One-at-a-time keeps memory low on
+  // phones (each photo is decoded and resized before sending) and means a flaky
+  // connection only ever costs you the photo that was in flight. Picking more
+  // photos while an upload is running just adds them to the same queue.
+  const uploadQueue = [];
+  let uploadRunning = false;
+  let batchTotal = 0;
+  let batchSucceeded = 0;
+  let batchFailed = []; // { file, message }
 
-    // 8s is generous for resizing a phone photo; if it's not done by then,
-    // something's stuck (see withFallback above) and we upload as-is instead.
-    const preparedFile = await withFallback(prepareImageForUpload(originalFile), 8000, originalFile);
-
-    msg.innerHTML = '<p class="lede">Uploading…</p>';
+  async function uploadOne(preparedFile) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-
     try {
       const form = new FormData();
       form.append('photo', preparedFile);
@@ -487,27 +628,105 @@
         headers: { Authorization: `Bearer ${guestToken}` },
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Upload failed.');
-      msg.innerHTML = '<div class="success-msg">Photo uploaded!</div>';
-      el('fileInput').value = '';
-      await renderMyUploads();
-      setTimeout(() => { msg.innerHTML = ''; }, 2500);
+      if (!res.ok) {
+        const err = new Error(data.error || 'Upload failed.');
+        // 401/403 = signed out or uploads closed: every other photo would fail the same way.
+        err.fatal = res.status === 401 || res.status === 403;
+        throw err;
+      }
     } catch (err) {
-      const timedOut = err.name === 'AbortError';
-      const errorText = timedOut
-        ? 'Upload timed out — the connection may be slow. Try again?'
-        : `${err.message || 'Upload failed.'} Try again?`;
-      msg.innerHTML = `<div class="error-msg">${errorText}</div>`;
-      const retryBtn = document.createElement('button');
-      retryBtn.type = 'button';
-      retryBtn.className = 'btn btn-ghost btn-block';
-      retryBtn.style.marginTop = '10px';
-      retryBtn.textContent = 'Try again';
-      retryBtn.addEventListener('click', () => performUpload(originalFile));
-      msg.appendChild(retryBtn);
+      if (err.name === 'AbortError') throw new Error('Upload timed out — the connection may be slow.');
+      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  function enqueueFiles(files) {
+    if (files.length === 0) return;
+    if (!uploadRunning) {
+      batchTotal = 0;
+      batchSucceeded = 0;
+      batchFailed = [];
+    }
+    files.forEach((f) => uploadQueue.push(f));
+    batchTotal += files.length;
+    if (!uploadRunning) processUploadQueue();
+  }
+
+  async function processUploadQueue() {
+    uploadRunning = true;
+    const msg = el('uploadMsg');
+    while (uploadQueue.length > 0) {
+      const file = uploadQueue.shift();
+      const position = batchSucceeded + batchFailed.length + 1;
+      const counter = batchTotal > 1 ? ` ${position} of ${batchTotal}` : '';
+      msg.innerHTML = `<p class="lede">Preparing photo${counter}…</p>`;
+
+      let uploaded = false;
+      try {
+        // 8s is generous for resizing a phone photo; if it's not done by then
+        // something's stuck (see withFallback) and we upload the original as-is.
+        const prepared = await withFallback(prepareImageForUpload(file), 8000, file);
+        msg.innerHTML = `<p class="lede">Uploading photo${counter}…</p>`;
+        await uploadOne(prepared);
+        uploaded = true;
+      } catch (err) {
+        const message = err.message || 'Upload failed.';
+        batchFailed.push({ file, message });
+        if (err.fatal) {
+          while (uploadQueue.length > 0) batchFailed.push({ file: uploadQueue.shift(), message });
+        }
+      }
+
+      if (uploaded) {
+        batchSucceeded += 1;
+        try {
+          await renderMyUploads(); // thumbnails appear as each photo lands
+        } catch (_) {
+          /* the upload itself worked; a failed refresh isn't an upload failure */
+        }
+      }
+    }
+    uploadRunning = false;
+    el('fileInput').value = ''; // lets the same photos be picked again later
+    showBatchSummary();
+  }
+
+  function showBatchSummary() {
+    const msg = el('uploadMsg');
+    msg.innerHTML = '';
+
+    if (batchFailed.length === 0) {
+      const ok = document.createElement('div');
+      ok.className = 'success-msg';
+      ok.textContent = batchSucceeded === 1 ? 'Photo uploaded!' : `${batchSucceeded} photos uploaded!`;
+      msg.appendChild(ok);
+      setTimeout(() => {
+        if (!uploadRunning && msg.firstChild === ok) msg.innerHTML = '';
+      }, 3000);
+      return;
+    }
+
+    const failedCount = batchFailed.length;
+    const lead =
+      batchSucceeded > 0
+        ? `${batchSucceeded} uploaded, but ${failedCount} didn't make it.`
+        : failedCount === 1
+          ? "That photo didn't upload."
+          : `${failedCount} photos didn't upload.`;
+    const err = document.createElement('div');
+    err.className = 'error-msg';
+    err.textContent = `${lead} ${batchFailed[0].message}`;
+    msg.appendChild(err);
+
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'btn btn-ghost btn-block';
+    retryBtn.style.marginTop = '10px';
+    retryBtn.textContent = failedCount === 1 ? 'Try again' : `Try the ${failedCount} again`;
+    retryBtn.addEventListener('click', () => enqueueFiles(batchFailed.map((f) => f.file)));
+    msg.appendChild(retryBtn);
   }
 
   function wireUpload() {
@@ -519,9 +738,9 @@
     // file before the change handler ever sees it (the exact bug reported:
     // pick a photo, confirm, and nothing happens with no error).
     input.addEventListener('change', () => {
-      const file = input.files[0];
-      if (!file) return;
-      performUpload(file);
+      const files = Array.from(input.files || []);
+      if (files.length === 0) return;
+      enqueueFiles(files);
     });
   }
 
@@ -652,27 +871,102 @@
     window.location.href = zipUrlFor(ids);
   }
 
+  function formatNames(names) {
+    if (names.length <= 1) return names[0] || '';
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  // Explains who won and, if it took a tiebreaker, exactly how it was decided.
+  // Built from text nodes (not innerHTML) because usernames are guest-chosen.
+  function renderWinnerBanner(winner) {
+    const box = el('winnerBanner');
+    box.innerHTML = '';
+    if (!winner) {
+      box.classList.add('hidden');
+      return;
+    }
+    const line = document.createElement('div');
+    const addText = (t) => line.appendChild(document.createTextNode(t));
+    const addName = (t) => {
+      const strong = document.createElement('strong');
+      strong.textContent = t;
+      line.appendChild(strong);
+    };
+    const sub = document.createElement('span');
+    sub.className = 'banner-sub';
+
+    if (winner.decidedBy === 'tie') {
+      addText("It's a tie! ");
+      addName(formatNames(winner.users));
+      addText(' share the win.');
+      sub.textContent =
+        `All level on ${plural(winner.likeCount, 'like')} for their top photo, ` +
+        `${plural(winner.totalLikes, 'like')} across all their photos, ` +
+        `and ${plural(winner.photoCount, 'photo')} uploaded.`;
+    } else if (winner.decidedBy === 'total_likes') {
+      addName(winner.users[0]);
+      addText(' wins!');
+      sub.textContent =
+        `The top photos tied at ${plural(winner.likeCount, 'like')}, so the tiebreaker went to the ` +
+        `uploader with the most total likes across all their photos (${winner.totalLikes}).`;
+    } else if (winner.decidedBy === 'photo_count') {
+      addName(winner.users[0]);
+      addText(' wins!');
+      sub.textContent =
+        `The top photos tied at ${plural(winner.likeCount, 'like')} and the uploaders tied on total likes ` +
+        `(${winner.totalLikes}), so the win goes to whoever uploaded the most photos (${winner.photoCount}).`;
+    } else {
+      addName(winner.users[0]);
+      addText(` wins with the most-liked photo — ${plural(winner.likeCount, 'like')}.`);
+    }
+
+    box.appendChild(line);
+    if (sub.textContent) box.appendChild(sub);
+    box.classList.remove('hidden');
+  }
+
   async function renderResults() {
     const res = await fetch(`${API}/results`);
+    if (!res.ok) return; // results aren't open yet (e.g. clocks a moment out of step); next poll retries
     const data = await res.json();
     resultsPhotos = data.all;
 
+    renderWinnerBanner(data.winner);
+
     const podium = el('podium');
     podium.innerHTML = '';
-    const ranks = ['rank1', 'rank2', 'rank3'];
-    const medals = ['🥇', '🥈', '🥉'];
-    data.top.forEach((p, i) => {
+    const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
+    // Tied ranks (e.g. two golds, no silver) don't fit the classic 2-1-3 arrangement.
+    podium.classList.toggle('flat', data.top.some((p) => p.rankShared > 1));
+    data.top.forEach((p) => {
       const slot = document.createElement('div');
-      slot.className = `slot ${ranks[i]}`;
-      slot.innerHTML = `
-        <img src="${p.url}" alt="Photo by ${p.username}" />
-        <div class="rank-label">${medals[i]}</div>
-        <div class="name">${p.username}</div>
-        <div class="count">${p.likeCount} like${p.likeCount === 1 ? '' : 's'}</div>`;
+      slot.className = `slot rank${p.rank}`;
+      const img = document.createElement('img');
+      img.src = p.url;
+      img.alt = `Photo by ${p.username}`;
+      const medal = document.createElement('div');
+      medal.className = 'rank-label';
+      medal.textContent = medals[p.rank] || '';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = p.username;
+      const count = document.createElement('div');
+      count.className = 'count';
+      count.textContent = plural(p.likeCount, 'like');
+      slot.append(img, medal, name, count);
       podium.appendChild(slot);
     });
     if (data.top.length === 0) {
       podium.innerHTML = '<p class="empty" style="grid-column: 1 / -1;">No photos were uploaded during the event.</p>';
+    }
+    const overflow = el('podiumOverflow');
+    if (data.topOverflow > 0) {
+      overflow.textContent = `…and ${plural(data.topOverflow, 'more photo')} tied for the podium. See the full album below.`;
+      overflow.classList.remove('hidden');
+    } else {
+      overflow.classList.add('hidden');
     }
     el('downloadAllBtn').classList.toggle('hidden', data.all.length === 0);
 
@@ -682,18 +976,35 @@
 
     const grid = el('resultsGrid');
     grid.innerHTML = '';
-    data.all.forEach((p, i) => {
+    data.all.forEach((p) => {
       const card = document.createElement('div');
       card.className = 'result-card' + (selectedIds.has(p.id) ? ' selected' : '');
-      card.innerHTML = `
-        <div class="thumb-wrap">
-          <img src="${p.url}" alt="Photo by ${p.username}" loading="lazy" />
-          <span class="select-check"><span class="checkmark">✓</span></span>
-        </div>
-        <div class="caption">
-          <span>#${i + 1} · ${p.username}</span>
-          <span class="count">${p.likeCount} ♥</span>
-        </div>`;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb-wrap';
+      const img = document.createElement('img');
+      img.src = p.url;
+      img.alt = `Photo by ${p.username}`;
+      img.loading = 'lazy';
+      const check = document.createElement('span');
+      check.className = 'select-check';
+      const mark = document.createElement('span');
+      mark.className = 'checkmark';
+      mark.textContent = '✓';
+      check.appendChild(mark);
+      wrap.append(img, check);
+
+      const caption = document.createElement('div');
+      caption.className = 'caption';
+      const who = document.createElement('span');
+      // "T1" = tied for 1st, the usual shorthand for shared ranks.
+      who.textContent = `${p.rankShared > 1 ? 'T' : '#'}${p.rank} · ${p.username}`;
+      const count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = `${p.likeCount} ♥`;
+      caption.append(who, count);
+
+      card.append(wrap, caption);
       card.addEventListener('click', () => {
         if (selectedIds.has(p.id)) selectedIds.delete(p.id);
         else selectedIds.add(p.id);
@@ -728,6 +1039,15 @@
 
   // ---------- Init ----------
 
+  el('whatIsThisBtn').addEventListener('click', () => {
+    const panel = el('infoPanel');
+    const opening = panel.classList.contains('hidden');
+    if (opening) renderInfoPanel();
+    panel.classList.toggle('hidden', !opening);
+    el('whatIsThisBtn').setAttribute('aria-expanded', String(opening));
+    el('whatIsThisBtn').textContent = opening ? 'Hide' : 'What is this?';
+  });
+
   el('loginForm').addEventListener('submit', handleLoginSubmit);
   el('resumeForm').addEventListener('submit', handleResumeSubmit);
   el('resumeCancelBtn').addEventListener('click', () => {
@@ -758,6 +1078,7 @@
   });
 
   wireUpload();
+  el('featuredImg').addEventListener('click', () => openLightbox(el('featuredImg').src));
 
   refreshStatus();
   pollTimer = setInterval(refreshStatus, 20000);

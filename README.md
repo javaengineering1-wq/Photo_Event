@@ -36,6 +36,56 @@ name), which is the right trade-off for a party/event, but worth knowing.
 Hosts, by contrast, have real accounts (email + password) — that's what
 makes their events private to them.
 
+## Winners, ties, and what guests see
+
+**Join screen**
+- A **"What is this?"** button above the name/PIN form opens a short
+  explanation of the contest's four steps (join, submit photos, vote, see
+  results) with the real dates: when uploads close, when voting opens and
+  closes, and when results are revealed. It's built from the host's own
+  settings (start, end, voting length), shown in each guest's local time zone
+  with the zone named, and it updates on its own if the host changes the
+  schedule. Guests only reach the join screen once the host has set a
+  schedule, so the dates are always there.
+
+**Who can see what (enforced by the server, not just hidden on screen)**
+- *Upload phase:* a guest can only get their **own** photos from the server.
+  Everyone else's stay private, apart from the one "sneak peek" photo below.
+- *Voting phase:* every photo is listed, but with **no uploader names, no like
+  counts, and no upload order**. The server tells each guest which photos are
+  theirs; that's the only ownership information that leaves it.
+- *Results phase:* names and like counts are revealed.
+- *Hosts* see every photo, with uploader and like count, in their dashboard
+  at any time (that list requires the host's login).
+
+**Upload phase**
+- Guests can pick **several photos at once** from their camera roll; they
+  upload one at a time with a running "photo 2 of 5" message, and any that
+  fail can be retried together.
+- A **"sneak peek"** card shows one photo from the album so far. The server
+  picks it and keeps it for the whole hour, then picks a new one **every
+  hour, on the hour** (UTC hour boundaries, which match local clock hours in
+  every time zone except the few that use half-hour offsets). It never shows
+  who uploaded it.
+- The **event name** is shown at the top of the page in every phase.
+
+**Picking the winner.** The most-liked photo wins. If photos tie, the tie is
+broken in this order:
+
+1. the uploader with the most **total likes across all their photos**;
+2. then the uploader with the most **photos uploaded**;
+3. if that is still level, the contest is announced as a **tie** and every
+   tied uploader is named.
+
+The results screen explains which rule decided it. Photos that are exactly
+level share a rank (1, 1, 3 ...), shown as `T1` in the album. 2nd and 3rd
+place on the podium need at least one like; the winner(s) always show. Note
+that if **nobody votes at all**, everything is level on likes, so the win
+goes to whoever uploaded the most photos (rule 2).
+
+Results (and the winner announcement) are only available once the voting
+window has closed.
+
 ## Project layout
 
 ```

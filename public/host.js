@@ -221,10 +221,11 @@
         'text-align:left; width:100%; cursor:pointer; border:1px solid var(--line); background:var(--surface); -webkit-appearance:none; appearance:none;';
       card.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
-          <h3 style="font-size:16px; margin:0;">${ev.name}</h3>
+          <h3 class="ev-name" style="font-size:16px; margin:0;"></h3>
           <span class="phase-chip" style="font-size:11px;">${phaseLabel(ev.phase)}</span>
         </div>
         <p class="lede" style="font-size:13px;">${ev.photoCount} photo${ev.photoCount === 1 ? '' : 's'} · ${ev.guestCount} guest${ev.guestCount === 1 ? '' : 's'}</p>`;
+      card.querySelector('.ev-name').textContent = ev.name; // text, not HTML
       card.addEventListener('click', () => openEvent(ev.id));
       list.appendChild(card);
     });
@@ -359,7 +360,7 @@
   });
 
   async function loadModeration() {
-    const apiPhotos = await fetch(`/api/e/${currentEvent.slug}/photos`).then((r) => r.json());
+    const apiPhotos = await api(`/api/host/events/${currentEventId}/photos`);
     const grid = el('modGrid');
     grid.innerHTML = '';
     el('modEmpty').classList.toggle('hidden', apiPhotos.photos.length > 0);
@@ -368,7 +369,7 @@
       div.className = 'thumb';
       div.style.position = 'relative';
       div.innerHTML = `
-        <img src="${p.url}" alt="Photo by ${p.username}" loading="lazy" />
+        <img src="${p.url}" alt="Guest photo" loading="lazy" />
         <button data-id="${p.id}" title="Delete photo"
           style="position:absolute; top:4px; right:4px; background:rgba(18,19,42,0.85); border:1px solid var(--coral); color:var(--coral); border-radius:6px; font-size:11px; padding:3px 6px; cursor:pointer;">
           Delete

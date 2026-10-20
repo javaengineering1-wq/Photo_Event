@@ -20,6 +20,12 @@ const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days, host sessions
 const GUEST_SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days, guest sessions
 
+// How often the "sneak peek" photo changes during the upload phase: every
+// hour, on the hour (UTC hour boundaries, which line up with local clock
+// hours everywhere except the few half-hour-offset time zones). The env
+// override exists only so rotation can be tested without waiting an hour.
+const FEATURED_INTERVAL_MS = Number(process.env.FEATURED_INTERVAL_MS) || 3600 * 1000;
+
 // In-memory (not persisted -- resets on restart, which is fine) throttle
 // against PIN-guessing: after too many wrong PINs for a given event+username,
 // require a short cooldown before trying again. This isn't meant to stop a
@@ -200,6 +206,88 @@ function photoToPublic(row, viewerUsername) {
     uploadedAt: row.uploadedAt,
     likeCount,
     likedByMe,
+  };
+}
+
+// Ranks every photo in an event and works out the winner, applying the
+// tie-break rules in order:
+//   1. most likes on the photo itself
+//   2. then, the uploader with the most total likes across ALL their photos
+//   3. then, the uploader with the most photos uploaded
+//   4. if that's still level, the contest is declared a tie
+// Photos with identical keys share a rank (standard competition ranking:
+// 1, 1, 3 ...), so a genuine tie is visible all the way down the list.
+function computeResults(eventId) {
+  const photos = store.photos.filter((p) => p.eventId === eventId).map((p) => photoToPublic(p, null));
+
+  const userStats = new Map(); // username -> { totalLikes, photoCount }
+  for (const p of photos) {
+    const s = userStats.get(p.username) || { totalLikes: 0, photoCount: 0 };
+    s.totalLikes += p.likeCount;
+    s.photoCount += 1;
+    userStats.set(p.username, s);
+  }
+
+  const keyOf = (p) => {
+    const s = userStats.get(p.username);
+    return [p.likeCount, s.totalLikes, s.photoCount];
+  };
+  const sameKey = (a, b) => {
+    const ka = keyOf(a);
+    const kb = keyOf(b);
+    return ka.every((v, i) => v === kb[i]);
+  };
+
+  photos.sort((a, b) => {
+    const ka = keyOf(a);
+    const kb = keyOf(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] !== kb[i]) return kb[i] - ka[i];
+    }
+    return a.uploadedAt - b.uploadedAt; // display order only; doesn't affect rank
+  });
+
+  const ranked = [];
+  photos.forEach((p, i) => {
+    const rank = i > 0 && sameKey(p, photos[i - 1]) ? ranked[i - 1].rank : i + 1;
+    const s = userStats.get(p.username);
+    ranked.push({ ...p, rank, ownerTotalLikes: s.totalLikes, ownerPhotoCount: s.photoCount });
+  });
+  const perRank = new Map();
+  ranked.forEach((p) => perRank.set(p.rank, (perRank.get(p.rank) || 0) + 1));
+  ranked.forEach((p) => {
+    p.rankShared = perRank.get(p.rank);
+  });
+
+  if (ranked.length === 0) return { ranked, winner: null };
+
+  // --- Who won, and how was it decided? ---
+  const topLikes = ranked[0].likeCount;
+  const topLikeUsers = [...new Set(ranked.filter((p) => p.likeCount === topLikes).map((p) => p.username))];
+  const firstPlaceUsers = [...new Set(ranked.filter((p) => p.rank === 1).map((p) => p.username))];
+  const lead = userStats.get(firstPlaceUsers[0]);
+
+  let decidedBy;
+  if (firstPlaceUsers.length > 1) {
+    decidedBy = 'tie';
+  } else if (topLikeUsers.length === 1) {
+    decidedBy = 'likes'; // only one uploader had a photo at the top like count -- no tie to break
+  } else {
+    const others = topLikeUsers.filter((u) => u !== firstPlaceUsers[0]);
+    const beatenOnTotalLikes = others.every((u) => userStats.get(u).totalLikes < lead.totalLikes);
+    decidedBy = beatenOnTotalLikes ? 'total_likes' : 'photo_count';
+  }
+
+  return {
+    ranked,
+    winner: {
+      tied: decidedBy === 'tie',
+      decidedBy,
+      users: firstPlaceUsers,
+      likeCount: topLikes,
+      totalLikes: lead.totalLikes,
+      photoCount: lead.photoCount,
+    },
   };
 }
 
@@ -499,6 +587,15 @@ app.post('/api/host/events/:eventId/users', requireHost, (req, res) => {
   res.json({ ok: true, users: sortedEventUsers(event.id) });
 });
 
+// Hosts moderate in every phase, so they get the full photo list (with uploader
+// and like count) -- but only through their login, never the public endpoint.
+app.get('/api/host/events/:eventId/photos', requireHost, (req, res) => {
+  const event = loadOwnedEvent(req, res);
+  if (!event) return;
+  const rows = store.photos.filter((p) => p.eventId === event.id).sort((a, b) => b.uploadedAt - a.uploadedAt);
+  res.json({ photos: rows.map((r) => photoToPublic(r, null)) });
+});
+
 app.delete('/api/host/events/:eventId/photos/:photoId', requireHost, (req, res) => {
   const event = loadOwnedEvent(req, res);
   if (!event) return;
@@ -530,9 +627,7 @@ app.get('/api/host/events/:eventId/export', requireHost, (req, res) => {
   if (!event) return;
 
   const photoRows = store.photos.filter((p) => p.eventId === event.id).sort((a, b) => a.uploadedAt - b.uploadedAt);
-  const results = photoRows
-    .map((r) => photoToPublic(r, null))
-    .sort((a, b) => b.likeCount - a.likeCount || a.uploadedAt - b.uploadedAt);
+  const { ranked: results, winner } = computeResults(event.id);
 
   res.attachment(`${event.name.replace(/[^a-z0-9]+/gi, '-')}-backup-${Date.now()}.zip`);
   const archive = archiver('zip', { zlib: { level: 9 } });
@@ -552,7 +647,7 @@ app.get('/api/host/events/:eventId/export', requireHost, (req, res) => {
     }
   });
 
-  archive.append(JSON.stringify({ event: event.name, exportedAt: new Date().toISOString(), results }, null, 2), {
+  archive.append(JSON.stringify({ event: event.name, exportedAt: new Date().toISOString(), winner, results }, null, 2), {
     name: 'results.json',
   });
 
@@ -754,13 +849,80 @@ app.delete('/api/e/:slug/photos/:photoId', (req, res) => {
   res.json({ ok: true });
 });
 
+// A single "sneak peek" photo from the album, shown during the upload phase.
+// It's picked once per hour and remembered on the event so every guest sees
+// the same one all hour; it changes when the hour rolls over. No uploader
+// name is returned -- same anonymity rule as the voting screen.
+app.get('/api/e/:slug/featured', (req, res) => {
+  const event = loadEventBySlug(req, res);
+  if (!event) return;
+
+  const now = Date.now();
+  const phase = getPhase(getEventConfig(event), new Date(now));
+  if (phase !== 'upload') return res.json({ photo: null, nextChangeAt: null });
+
+  const bucket = Math.floor(now / FEATURED_INTERVAL_MS);
+  const nextChangeAt = new Date((bucket + 1) * FEATURED_INTERVAL_MS).toISOString();
+  const photos = store.photos.filter((p) => p.eventId === event.id);
+  if (photos.length === 0) return res.json({ photo: null, nextChangeAt });
+
+  let current = null;
+  if (event.featured && event.featured.bucket === bucket) {
+    current = photos.find((p) => p.id === event.featured.photoId) || null; // null if it was deleted
+  }
+  if (!current) {
+    // New hour (or the featured photo was deleted): pick a fresh one, avoiding
+    // the previous pick when there's anything else to choose from.
+    const previousId = event.featured ? event.featured.photoId : null;
+    let candidates = photos.filter((p) => p.id !== previousId);
+    if (candidates.length === 0) candidates = photos;
+    current = candidates[Math.floor(Math.random() * candidates.length)];
+    event.featured = { bucket, photoId: current.id };
+    saveDB();
+  }
+
+  res.json({ photo: { id: current.id, url: `/uploads/${current.filename}` }, nextChangeAt });
+});
+
+// What a guest may learn from the photo list depends on the phase. The screens
+// already hide this stuff, but anything the API hands out can be read in the
+// browser's dev tools, so the API itself has to hold the line:
+//   - upload phase (and before): only the requester's OWN photos. Everyone
+//     else's stay private; the hourly "sneak peek" is the only glimpse.
+//   - voting phase: every photo, but no uploader names, no like counts, and no
+//     upload order (rows come back in a neutral order) -- plus a `mine` flag
+//     worked out for the requester, so the UI never needs to know whose is whose.
+//   - results phase: names and like counts are revealed.
 app.get('/api/e/:slug/photos', (req, res) => {
   const event = loadEventBySlug(req, res);
   if (!event) return;
 
   const viewer = softResolveGuestUsername(req, event);
-  const rows = store.photos.filter((p) => p.eventId === event.id).sort((a, b) => b.uploadedAt - a.uploadedAt);
-  res.json({ photos: rows.map((r) => photoToPublic(r, viewer)) });
+  const phase = getPhase(getEventConfig(event), new Date());
+  const all = store.photos.filter((p) => p.eventId === event.id);
+
+  let rows;
+  if (phase === 'voting' || phase === 'results') {
+    rows = [...all].sort((a, b) => a.id.localeCompare(b.id)); // random-looking, not upload order
+  } else {
+    rows = all.filter((p) => viewer && p.username === viewer).sort((a, b) => b.uploadedAt - a.uploadedAt);
+  }
+
+  res.json({
+    photos: rows.map((r) => {
+      const out = {
+        id: r.id,
+        url: `/uploads/${r.filename}`,
+        mine: !!viewer && r.username === viewer,
+        likedByMe: viewer ? store.likes.some((l) => l.photoId === r.id && l.username === viewer) : false,
+      };
+      if (phase === 'results') {
+        out.username = r.username;
+        out.likeCount = store.likes.filter((l) => l.photoId === r.id).length;
+      }
+      return out;
+    }),
+  });
 });
 
 app.post('/api/e/:slug/like', (req, res) => {
@@ -801,10 +963,27 @@ app.get('/api/e/:slug/results', (req, res) => {
   const event = loadEventBySlug(req, res);
   if (!event) return;
 
-  const rows = store.photos.filter((p) => p.eventId === event.id);
-  const withCounts = rows.map((r) => photoToPublic(r, null));
-  withCounts.sort((a, b) => b.likeCount - a.likeCount || a.uploadedAt - b.uploadedAt);
-  res.json({ top: withCounts.slice(0, 3), all: withCounts });
+  // Standings (and now a declared winner) shouldn't be readable while people
+  // are still voting -- the UI hides counts and names during voting, so the
+  // API shouldn't hand them out either.
+  const phase = getPhase(getEventConfig(event), new Date());
+  if (phase !== 'results') {
+    return res.status(403).json({ error: 'Results are revealed once voting closes.' });
+  }
+
+  const { ranked, winner } = computeResults(event.id);
+  // Podium = everything ranked 1st-3rd, except that 2nd/3rd place needs at
+  // least one like (a medal for a photo nobody voted for is just noise); the
+  // winner(s) always appear. Ties can still make this a lot of photos, so cap
+  // what's sent for the podium; the full list is in `all`.
+  const PODIUM_CAP = 6;
+  const podium = ranked.filter((p) => p.rank <= 3 && (p.likeCount > 0 || p.rank === 1));
+  res.json({
+    top: podium.slice(0, PODIUM_CAP),
+    topOverflow: Math.max(0, podium.length - PODIUM_CAP),
+    all: ranked,
+    winner,
+  });
 });
 
 app.get('/api/e/:slug/download', (req, res) => {
